@@ -2,11 +2,13 @@
 
 Scheduloop is a workforce forecasting app for small businesses. It helps a gym, cafe, restaurant, or similar business turn expected demand into a practical staffing plan across the day.
 
-## Preview 
+## Preview
 
-![Dashboard1 screenshot](./docs/dashboard1.png)
-![Dashboard2 screenshot](./docs/dashboard2.png)
-![setupView screenshot](./docs/setupView.png)
+![Dashboard 1 screenshot](docs/dashboard1.png)
+
+![Dashboard 2 screenshot](docs/dashboard2.png)
+
+![Setup view screenshot](docs/setupView.png)
 
 
 The current Model supports:
