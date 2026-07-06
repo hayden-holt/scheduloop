@@ -2,7 +2,7 @@
 
 Scheduloop is a workforce forecasting app for small businesses. It helps a gym, cafe, restaurant, or similar business turn expected demand into a practical staffing plan across the day.
 
-The current MVP supports:
+The current Model supports:
 
 - Firebase sign up, login, and per-user business profile storage.
 - Guided onboarding for business type, roles, opening hours, typical busy level, and peak staffing assumptions.
@@ -16,6 +16,11 @@ The current MVP supports:
 - Role staffing settings, opening/closing coverage rules, buffers, and break allowance settings.
 
 Scheduloop is not a payroll system or a rota publisher yet. Labour cost is an estimate only, and forecasts should be reviewed by a manager before shifts are published.
+
+## Why I Built This
+
+Small businesses often make staffing decisions using guesswork, especially when demand changes by day, event, season, or local context. Scheduloop explores how a lightweight forecasting tool could help managers turn demand expectations into practical staffing guidance without needing a full payroll or rota system.
+
 
 ## Tech Stack
 
@@ -170,14 +175,3 @@ Managers should keep reviewing forecasts against real rotas and trading patterns
 - Do not store sensitive production business data in localStorage or committed sample data.
 - Sample CSV files should stay anonymised and synthetic.
 
-## Roadmap
-
-Useful next steps for MVP readiness:
-
-- Merge real-world context learning once there is enough tagged history.
-- Add stronger tests around profile persistence, route protection, and Firestore rules.
-- Improve CSV import guidance and validation feedback for non-technical users.
-- Add browser-based smoke tests for signup, onboarding, CSV upload, and planner updates.
-- Improve accessibility checks and mobile layout QA.
-- Add safe multi-business and team-member support before serving businesses with multiple locations or shared accounts.
-- Learn future context effects by comparing similar tagged days with untagged days for the same business.
