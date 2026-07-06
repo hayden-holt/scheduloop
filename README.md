@@ -163,19 +163,11 @@ multiplier before demand is converted into staff. Defaults are starting
 assumptions only; future versions should learn business-specific effects by
 comparing similar tagged days with similar untagged days.
 
-## Forecasting Limitations
+## Limitations
 
-The forecasting model is intentionally simple and explainable for the MVP:
+This is still an MVP, so the forecasting model is intentionally simple. It does not connect to live weather, holiday, school term, payday, or local event APIs yet. Context tags currently adjust demand using fixed rule-based multipliers rather than learned business-specific patterns.
 
-- Business presets provide the starter forecast until enough CSV history exists.
-- CSV data is blended with preset demand, with more trust given to matching weekday history.
-- Calendar day type and context settings adjust demand with fixed rule-based multipliers.
-- Staffing is calculated from demand, role curves, service rates, peak staffing caps, minimum cover rules, and operating buffers.
-- Confidence reflects the amount of matching uploaded history; it is not a guarantee.
-- Manual context tags exist, but no external weather, holiday, payday, school term, roadworks, or local event APIs are connected yet.
-- The model does not currently learn business-specific context effects.
-
-Managers should keep reviewing forecasts against real rotas and trading patterns before relying on the output for staffing decisions.
+The app should be treated as staffing guidance, not an automatic rota system.
 
 ## Security and Data Notes
 
