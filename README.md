@@ -11,24 +11,25 @@ Scheduloop is a workforce forecasting app for small businesses. It helps a gym, 
 ![Setup view screenshot](docs/setupView.png)
 
 
-The current Model supports:
+## Current MVP
 
-- Firebase sign up, login, and per-user business profile storage.
-- Guided onboarding for business type, roles, opening hours, typical busy level, and peak staffing assumptions.
-- A dashboard with planner and setup views.
-- A "Shape of the day" chart showing total staffing need and role-level staffing lines.
-- Rota guidance that turns the forecast into practical manager actions without publishing shifts.
-- Optional labour-cost estimates from average or role-level hourly wages.
-- CSV upload for historical demand data, role-specific demand columns, validation, and basic backtesting against uploaded staff counts.
-- Calendar day settings for quiet, normal, busy, legacy event days, and manual context factors such as promotions, local events, holidays, payday periods, roadworks, and weather.
-- Manager feedback on forecast accuracy for future similar days.
-- Role staffing settings, opening/closing coverage rules, buffers, and break allowance settings.
+Scheduloop currently includes:
 
-Scheduloop is not a payroll system or a rota publisher yet. Labour cost is an estimate only, and forecasts should be reviewed by a manager before shifts are published.
+- Firebase sign up, login, and user-specific business profile storage.
+- Guided onboarding for business type, roles, opening hours, and staffing assumptions.
+- A dashboard showing expected staffing need across the day.
+- Role-level staffing lines for areas such as front of house and kitchen.
+- CSV upload for historical demand data.
+- Basic backtesting against uploaded staff counts.
+- Calendar settings for normal, quiet, busy, and event-style days.
+- Labour-cost estimates based on average or role-level hourly wages.
 
-## Why I Built This
 
-Small businesses often make staffing decisions using guesswork, especially when demand changes by day, event, season, or local context. Scheduloop explores how a lightweight forecasting tool could help managers turn demand expectations into practical staffing guidance without needing a full payroll or rota system.
+## Why I built this
+
+I built Scheduloop to practise building a realistic SaaS-style app rather than another simple to-do list or tutorial project. The idea was to create a tool that a small business manager could use to estimate staffing needs across the day based on demand, opening hours, roles, and uploaded CSV data.
+
+The main focus was not perfect forecasting, but building a clear MVP with authentication, onboarding, stored business profiles, charts, CSV parsing, and manager-friendly recommendations.
 
 
 ## Tech Stack
