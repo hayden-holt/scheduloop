@@ -31,6 +31,7 @@ import {
   calculateRoleStaff,
   normalizeStaffCount,
   runForecastBacktest,
+  stabilizeStaffingRecommendations,
 } from "../utils/staffing";
 import {
   getCsvBlendWeight,
@@ -432,7 +433,7 @@ function DashboardPage() {
       totalRows: csvCurves?.rows || 0,
     });
 
-    return slotLabels.map((slotLabel, slotIndex) => {
+    const rawStaffingPoints = slotLabels.map((slotLabel, slotIndex) => {
       const absoluteIndex = getHourIndexForSlot(slotLabel);
       const point = { hour: slotLabel };
       const isTradingSlot = tradingSlotSet.has(slotLabel);
@@ -539,6 +540,12 @@ function DashboardPage() {
         peakStaff,
         totalFeedbackCorrection
       );
+    });
+
+    return stabilizeStaffingRecommendations(rawStaffingPoints, roles, {
+      intervalMinutes,
+      operatingRules,
+      peakStaff,
     });
   }, [
     roles,

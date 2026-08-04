@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import fs from "node:fs";
 import {
   getActiveHourWindow,
   generateTimeSlots,
@@ -17,6 +18,7 @@ import {
   calculateBacktestSummary,
   normalizeStaffCount,
   runForecastBacktest,
+  stabilizeStaffingRecommendations,
 } from "../src/utils/staffing.js";
 import {
   CSV_DEMAND_MODEL_VERSION,
@@ -533,6 +535,33 @@ test("staffing handles missing peak with role curve fallback", () => {
   );
 });
 
+test("role shaping differentiates common roles without randomness", () => {
+  const flatCurve = Array(HOURS.length).fill(1);
+  const morningIndex = HOURS.indexOf("09:00");
+  const baristaMorning = calculateRoleStaff({
+    demand: 0.7,
+    role: { id: "barista", name: "Barista", curve: flatCurve },
+    absoluteIndex: morningIndex,
+    peak: 5,
+  });
+  const repeatBaristaMorning = calculateRoleStaff({
+    demand: 0.7,
+    role: { id: "barista", name: "Barista", curve: flatCurve },
+    absoluteIndex: morningIndex,
+    peak: 5,
+  });
+  const waitMorning = calculateRoleStaff({
+    demand: 0.7,
+    role: { id: "wait", name: "Wait Staff", curve: flatCurve },
+    absoluteIndex: morningIndex,
+    peak: 5,
+  });
+
+  assert.equal(baristaMorning, repeatBaristaMorning);
+  assert.equal(baristaMorning, 4);
+  assert.equal(waitMorning, 3);
+});
+
 test("minimum total staff fills a required role", () => {
   const adjusted = applyMinimumTotalStaff(
     { hour: "09:00", barista: 1, total: 1 },
@@ -541,6 +570,104 @@ test("minimum total staff fills a required role", () => {
   );
   assert.equal(adjusted.barista, 2);
   assert.equal(adjusted.total, 2);
+});
+
+test("staffing recommendations remove isolated short spikes", () => {
+  const points = [
+    { hour: "09:00", coveragePhase: "trading", barista: 1, total: 1 },
+    { hour: "10:00", coveragePhase: "trading", barista: 2, total: 2 },
+    { hour: "11:00", coveragePhase: "trading", barista: 1, total: 1 },
+    { hour: "12:00", coveragePhase: "trading", barista: 1, total: 1 },
+  ];
+  const stable = stabilizeStaffingRecommendations(
+    points,
+    [{ id: "barista", maxStaff: 4 }],
+    { intervalMinutes: 60 }
+  );
+
+  assert.deepEqual(
+    stable.map((point) => point.barista),
+    [1, 1, 1, 1]
+  );
+  assert.deepEqual(
+    stable.map((point) => point.total),
+    [1, 1, 1, 1]
+  );
+});
+
+test("staffing recommendations bridge one-slot dips into stable blocks", () => {
+  const points = [
+    { hour: "09:00", coveragePhase: "trading", barista: 1, total: 1 },
+    { hour: "10:00", coveragePhase: "trading", barista: 2, total: 2 },
+    { hour: "11:00", coveragePhase: "trading", barista: 1, total: 1 },
+    { hour: "12:00", coveragePhase: "trading", barista: 2, total: 2 },
+    { hour: "13:00", coveragePhase: "trading", barista: 1, total: 1 },
+  ];
+  const stable = stabilizeStaffingRecommendations(
+    points,
+    [{ id: "barista", maxStaff: 4 }],
+    { intervalMinutes: 60 }
+  );
+
+  assert.deepEqual(
+    stable.map((point) => point.barista),
+    [1, 2, 2, 2, 1]
+  );
+  assert.deepEqual(
+    stable.map((point) => point.total),
+    [1, 2, 2, 2, 1]
+  );
+});
+
+test("staffing stability keeps prep and clean-up cover separate", () => {
+  const points = [
+    { hour: "08:30", coveragePhase: "prep", barista: 1, total: 1 },
+    { hour: "09:00", coveragePhase: "trading", barista: 3, total: 3 },
+    { hour: "10:00", coveragePhase: "trading", barista: 3, total: 3 },
+    { hour: "11:00", coveragePhase: "close", barista: 1, total: 1 },
+  ];
+  const stable = stabilizeStaffingRecommendations(
+    points,
+    [{ id: "barista", maxStaff: 4 }],
+    { intervalMinutes: 60 }
+  );
+
+  assert.deepEqual(
+    stable.map((point) => point.barista),
+    [1, 3, 3, 1]
+  );
+});
+
+test("May 2026 cafe sample can be stabilized deterministically", () => {
+  const csv = fs.readFileSync(
+    new URL("../sample-data/cafe-rich-role-demand.csv", import.meta.url),
+    "utf8"
+  );
+  const model = parseCsvDemand(csv, {
+    openingHours: { open: "08:00", close: "17:00" },
+    intervalMinutes: 30,
+  });
+  const friday = model.actualStaffByWeekday[5] || [];
+  const points = model.slotLabels.map((hour, index) => ({
+    hour,
+    coveragePhase: "trading",
+    floor: friday[index] || 0,
+    total: friday[index] || 0,
+  }));
+  const roles = [{ id: "floor", maxStaff: 10 }];
+  const stable = stabilizeStaffingRecommendations(points, roles, {
+    intervalMinutes: model.intervalMinutes,
+  });
+  const repeatStable = stabilizeStaffingRecommendations(points, roles, {
+    intervalMinutes: model.intervalMinutes,
+  });
+
+  assert.deepEqual(stable, repeatStable);
+  assert.equal(Math.max(...stable.map((point) => point.total)), 6);
+  assert.deepEqual(
+    stable.map((point) => point.total).slice(7, 11),
+    [6, 6, 6, 6]
+  );
 });
 
 test("day context defaults and invalid values stay safe", () => {

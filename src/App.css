@@ -4241,3 +4241,232 @@ html, body, #root {
     flex: 1 1 100%;
   }
 }
+
+/* GUIDED STAFF ROLE SETUP */
+
+.staff-panel {
+  gap: 16px;
+}
+
+.staff-role-row {
+  display: flex;
+  flex-direction: column;
+  gap: 13px;
+  padding: 18px;
+}
+
+.staff-role-card-header {
+  display: flex;
+  gap: 12px 16px;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.staff-role-main {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 4px 10px;
+  align-items: center;
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: calc(100% - 132px);
+}
+
+.staff-role-color-dot {
+  grid-row: 1 / span 2;
+  align-self: center;
+}
+
+.staff-role-name-label,
+.staff-add-field span,
+.staff-role-colour-label {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.staff-role-name-input {
+  grid-column: 2;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  min-height: 38px;
+  padding: 7px 9px;
+  border: 1px solid rgba(101, 124, 166, 0.28);
+  border-radius: 10px;
+  background: rgba(8, 13, 26, 0.36);
+}
+
+.staff-role-summary {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.staff-role-primary-controls {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(110px, 1fr)) minmax(180px, 1.15fr);
+  gap: 12px;
+  align-items: stretch;
+}
+
+.staff-role-peak-label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.staff-role-peak-label span {
+  color: var(--text-main);
+  font-weight: 800;
+}
+
+.staff-role-peak-label small,
+.staff-role-check small {
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.staff-role-check-primary {
+  align-items: flex-start;
+  gap: 9px;
+  min-height: auto;
+  padding: 11px 12px;
+}
+
+.staff-role-check-primary span {
+  display: grid;
+  gap: 4px;
+  color: var(--text-main);
+  font-weight: 800;
+}
+
+.staff-role-more-settings {
+  border-top: 1px solid rgba(101, 124, 166, 0.16);
+  padding-top: 12px;
+}
+
+.staff-role-more-settings summary {
+  width: fit-content;
+  cursor: pointer;
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.staff-role-more-settings[open] summary {
+  margin-bottom: 12px;
+}
+
+.staff-role-more-settings .staff-role-controls {
+  padding-top: 0;
+  border-top: 0;
+}
+
+.staff-role-controls {
+  grid-template-columns: repeat(3, minmax(108px, 1fr));
+}
+
+.staff-role-colour-group {
+  display: grid;
+  grid-column: 1 / -1;
+  gap: 7px;
+}
+
+.staff-role-color-picker,
+.staff-add-color-picker {
+  justify-self: start;
+  border-radius: 12px;
+}
+
+.staff-color-swatch {
+  width: 22px;
+  height: 22px;
+  border-radius: 8px;
+}
+
+.staff-color-swatch-selected {
+  border-color: #ffffff;
+  box-shadow: 0 0 0 2px rgba(79, 140, 255, 0.42);
+}
+
+.staff-role-remove {
+  flex: 0 0 auto;
+  align-self: end;
+  min-width: 104px;
+  min-height: 34px;
+  margin-top: 22px;
+  padding: 7px 12px;
+  white-space: nowrap;
+  background: transparent;
+  color: var(--text-muted);
+  border-color: rgba(101, 124, 166, 0.32);
+  box-shadow: none;
+}
+
+.staff-role-remove:hover {
+  background: rgba(248, 113, 113, 0.1);
+  color: #fca5a5;
+  border-color: rgba(248, 113, 113, 0.34);
+}
+
+.staff-add-block {
+  display: grid;
+  gap: 12px;
+}
+
+.staff-add-block .staff-add-hint {
+  margin: 0;
+}
+
+.staff-add-row {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) minmax(110px, 150px) auto;
+  gap: 10px;
+  align-items: end;
+}
+
+.staff-add-field {
+  display: grid;
+  gap: 6px;
+}
+
+.staff-add-peak-input {
+  width: 100%;
+}
+
+.theme-root[data-theme="light"] .staff-role-name-input {
+  background: #f8fbff;
+  border-color: #c8d5e6;
+}
+
+.theme-root[data-theme="light"] .staff-role-remove:hover {
+  color: #9f1239;
+}
+
+@media (max-width: 900px) {
+  .staff-role-primary-controls,
+  .staff-role-controls,
+  .staff-add-row {
+    grid-template-columns: 1fr;
+  }
+
+  .staff-role-card-header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .staff-role-main {
+    max-width: 100%;
+  }
+
+  .staff-role-remove {
+    align-self: flex-start;
+    margin-top: 0;
+    min-width: 0;
+  }
+}
