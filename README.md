@@ -2,20 +2,35 @@
 
 Scheduloop is a workforce forecasting app for small businesses. It helps a gym, cafe, restaurant, or similar business turn expected demand into a practical staffing plan across the day.
 
-The current MVP supports:
+## Preview
 
-- Firebase sign up, login, and per-user business profile storage.
-- Guided onboarding for business type, roles, opening hours, typical busy level, and peak staffing assumptions.
-- A dashboard with planner and setup views.
-- A "Shape of the day" chart showing total staffing need and role-level staffing lines.
-- Rota guidance that turns the forecast into practical manager actions without publishing shifts.
-- Optional labour-cost estimates from average or role-level hourly wages.
-- CSV upload for historical demand data, role-specific demand columns, validation, and basic backtesting against uploaded staff counts.
-- Calendar day settings for quiet, normal, busy, legacy event days, and manual context factors such as promotions, local events, holidays, payday periods, roadworks, and weather.
-- Manager feedback on forecast accuracy for future similar days.
-- Role staffing settings, opening/closing coverage rules, buffers, and break allowance settings.
+![Dashboard 1 screenshot](docs/dashboard1.png)
 
-Scheduloop is not a payroll system or a rota publisher yet. Labour cost is an estimate only, and forecasts should be reviewed by a manager before shifts are published.
+![Dashboard 2 screenshot](docs/dashboard2.png)
+
+![Setup view screenshot](docs/setupView.png)
+
+
+## Current MVP
+
+Scheduloop currently includes:
+
+- Firebase sign up, login, and user-specific business profile storage.
+- Guided onboarding for business type, roles, opening hours, and staffing assumptions.
+- A dashboard showing expected staffing need across the day.
+- Role-level staffing lines for areas such as front of house and kitchen.
+- CSV upload for historical demand data.
+- Basic backtesting against uploaded staff counts.
+- Calendar settings for normal, quiet, busy, and event-style days.
+- Labour-cost estimates based on average or role-level hourly wages.
+
+
+## Why I built this
+
+I built Scheduloop to practise building a realistic SaaS-style app rather than another simple to-do list or tutorial project. The idea was to create a tool that a small business manager could use to estimate staffing needs across the day based on demand, opening hours, roles, and uploaded CSV data.
+
+The main focus was not perfect forecasting, but building a clear MVP with authentication, onboarding, stored business profiles, charts, CSV parsing, and manager-friendly recommendations.
+
 
 ## Tech Stack
 
@@ -148,19 +163,11 @@ multiplier before demand is converted into staff. Defaults are starting
 assumptions only; future versions should learn business-specific effects by
 comparing similar tagged days with similar untagged days.
 
-## Forecasting Limitations
+## Limitations
 
-The forecasting model is intentionally simple and explainable for the MVP:
+This is still an MVP, so the forecasting model is intentionally simple. It does not connect to live weather, holiday, school term, payday, or local event APIs yet. Context tags currently adjust demand using fixed rule-based multipliers rather than learned business-specific patterns.
 
-- Business presets provide the starter forecast until enough CSV history exists.
-- CSV data is blended with preset demand, with more trust given to matching weekday history.
-- Calendar day type and context settings adjust demand with fixed rule-based multipliers.
-- Staffing is calculated from demand, role curves, service rates, peak staffing caps, minimum cover rules, and operating buffers.
-- Confidence reflects the amount of matching uploaded history; it is not a guarantee.
-- Manual context tags exist, but no external weather, holiday, payday, school term, roadworks, or local event APIs are connected yet.
-- The model does not currently learn business-specific context effects.
-
-Managers should keep reviewing forecasts against real rotas and trading patterns before relying on the output for staffing decisions.
+The app should be treated as staffing guidance, not an automatic rota system.
 
 ## Security and Data Notes
 
@@ -170,14 +177,3 @@ Managers should keep reviewing forecasts against real rotas and trading patterns
 - Do not store sensitive production business data in localStorage or committed sample data.
 - Sample CSV files should stay anonymised and synthetic.
 
-## Roadmap
-
-Useful next steps for MVP readiness:
-
-- Merge real-world context learning once there is enough tagged history.
-- Add stronger tests around profile persistence, route protection, and Firestore rules.
-- Improve CSV import guidance and validation feedback for non-technical users.
-- Add browser-based smoke tests for signup, onboarding, CSV upload, and planner updates.
-- Improve accessibility checks and mobile layout QA.
-- Add safe multi-business and team-member support before serving businesses with multiple locations or shared accounts.
-- Learn future context effects by comparing similar tagged days with untagged days for the same business.
