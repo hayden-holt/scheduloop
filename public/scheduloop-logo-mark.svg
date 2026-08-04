@@ -1,0 +1,53 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="ScheduleLoop logo">
+  <defs>
+    <linearGradient id="mark-fill" x1="10" y1="8" x2="56" y2="58" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#38d5ff"/>
+      <stop offset="0.55" stop-color="#22c7d7"/>
+      <stop offset="1" stop-color="#2f6df6"/>
+    </linearGradient>
+    <linearGradient id="mark-stroke" x1="16" y1="14" x2="50" y2="52" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#a8f3ff"/>
+      <stop offset="1" stop-color="#44a8ff"/>
+    </linearGradient>
+  </defs>
+  <rect x="6" y="6" width="52" height="52" rx="16" fill="url(#mark-fill)"/>
+  <path
+    d="M18 34v-5.5c0-7.1 5.8-12.8 12.8-12.8H43"
+    fill="none"
+    stroke="url(#mark-stroke)"
+    stroke-width="4"
+    stroke-linecap="round"
+  />
+  <path
+    d="M40 11.5 48.5 20 40 28.5"
+    fill="none"
+    stroke="#72e5ff"
+    stroke-width="4"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+  <path
+    d="M46 30v5.5c0 7.1-5.8 12.8-12.8 12.8H21"
+    fill="none"
+    stroke="url(#mark-stroke)"
+    stroke-width="4"
+    stroke-linecap="round"
+  />
+  <path
+    d="M24 52.5 15.5 44 24 35.5"
+    fill="none"
+    stroke="#68dcff"
+    stroke-width="4"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+  <text
+    x="32"
+    y="38.5"
+    fill="#d8faff"
+    font-family="Inter, Arial, sans-serif"
+    font-size="19"
+    font-weight="800"
+    text-anchor="middle"
+  >SL</text>
+</svg>

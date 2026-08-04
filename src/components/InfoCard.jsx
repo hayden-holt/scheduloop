@@ -1,6 +1,6 @@
-function InfoCard({ title, subtitle, className = "", children }) {
+function InfoCard({ title, subtitle, className = "", id, children }) {
   return (
-    <div className={`card info-card${className ? ` ${className}` : ""}`}>
+    <div id={id} className={`card info-card${className ? ` ${className}` : ""}`}>
       <div className="info-card-header">
         <h2>{title}</h2>
         {subtitle && <p>{subtitle}</p>}

@@ -56,6 +56,16 @@ import {
   formatSlotRange,
 } from "../src/utils/rotaGuidance.js";
 import {
+  calculateCoverageForDay,
+  calculateShiftDurationHours,
+  calculateWeeklyRotaTotals,
+  copyShiftsToWeek,
+  getWeekDays,
+  getWeekStartDateKey,
+  hasOverlappingShift,
+  validateShift,
+} from "../src/utils/rota.js";
+import {
   canRequestPasswordReset,
   getFriendlyAuthErrorMessage,
 } from "../src/utils/authErrors.js";
@@ -943,6 +953,148 @@ test("slot range formatting includes the final forecast block", () => {
   assert.equal(formatSlotRange("12:00", "13:30", 30), "12:00-14:00");
 });
 
+test("shift duration subtracts unpaid breaks", () => {
+  assert.equal(
+    calculateShiftDurationHours({
+      startTime: "09:00",
+      endTime: "17:00",
+      breakMinutes: 30,
+    }),
+    7.5
+  );
+});
+
+test("shift validation prevents overlap and impossible breaks", () => {
+  const employees = [{ id: "maya", displayName: "Maya" }];
+  const shifts = [
+    {
+      id: "shift-1",
+      employeeId: "maya",
+      date: "2026-08-10",
+      startTime: "09:00",
+      endTime: "13:00",
+      roleId: "barista",
+      breakMinutes: 0,
+    },
+  ];
+  const overlappingShift = {
+    employeeId: "maya",
+    date: "2026-08-10",
+    startTime: "12:00",
+    endTime: "15:00",
+    roleId: "barista",
+    breakMinutes: 0,
+  };
+  const result = validateShift(overlappingShift, { employees, shifts });
+  const breakResult = validateShift(
+    {
+      employeeId: "maya",
+      date: "2026-08-10",
+      startTime: "09:00",
+      endTime: "10:00",
+      roleId: "barista",
+      breakMinutes: 60,
+    },
+    { employees, shifts: [] }
+  );
+
+  assert.equal(hasOverlappingShift(overlappingShift, shifts), true);
+  assert.equal(result.isValid, false);
+  assert.equal(result.errors.overlap, "This overlaps another shift for the same employee.");
+  assert.equal(breakResult.isValid, false);
+  assert.equal(breakResult.errors.breakMinutes, "Break must be shorter than the shift.");
+});
+
+test("weekly rota totals calculate hours and available cost", () => {
+  const weekStart = getWeekStartDateKey("2026-08-12");
+  const weekDays = getWeekDays(weekStart);
+  const totals = calculateWeeklyRotaTotals({
+    weekDays,
+    employees: [{ id: "maya", displayName: "Maya", hourlyRate: 12 }],
+    roles: [{ id: "barista", hourlyWage: null }],
+    shifts: [
+      {
+        employeeId: "maya",
+        date: "2026-08-10",
+        startTime: "09:00",
+        endTime: "13:00",
+        roleId: "barista",
+        breakMinutes: 0,
+      },
+      {
+        employeeId: "maya",
+        date: "2026-08-11",
+        startTime: "10:00",
+        endTime: "14:00",
+        roleId: "barista",
+        breakMinutes: 30,
+      },
+    ],
+  });
+
+  assert.equal(totals.weeklyHours, 7.5);
+  assert.equal(totals.employeeHours.maya, 7.5);
+  assert.equal(totals.dailyHours["2026-08-11"], 3.5);
+  assert.equal(totals.weeklyCost, 90);
+});
+
+test("coverage compares recommended and scheduled staffing", () => {
+  const rows = calculateCoverageForDay({
+    forecastPoints: [
+      { hour: "09:00", total: 2, barista: 1, kitchen: 1 },
+      { hour: "10:00", total: 3, barista: 2, kitchen: 1 },
+    ],
+    shifts: [
+      {
+        employeeId: "maya",
+        date: "2026-08-10",
+        startTime: "09:00",
+        endTime: "11:00",
+        roleId: "barista",
+      },
+      {
+        employeeId: "sam",
+        date: "2026-08-10",
+        startTime: "10:00",
+        endTime: "11:00",
+        roleId: "kitchen",
+      },
+    ],
+    roles: [
+      { id: "barista", name: "Barista" },
+      { id: "kitchen", name: "Kitchen" },
+    ],
+    intervalMinutes: 60,
+  });
+
+  assert.equal(rows[0].status, "under");
+  assert.equal(rows[0].scheduledTotal, 1);
+  assert.equal(rows[1].status, "under");
+  assert.equal(rows[1].roleCoverage[0].difference, -1);
+});
+
+test("copy previous week shifts keeps details and moves dates", () => {
+  const copied = copyShiftsToWeek(
+    [
+      {
+        id: "old-shift",
+        employeeId: "maya",
+        date: "2026-08-03",
+        startTime: "09:00",
+        endTime: "13:00",
+        roleId: "barista",
+        breakMinutes: 15,
+      },
+    ],
+    "2026-08-10"
+  );
+
+  assert.equal(copied[0].id, undefined);
+  assert.equal(copied[0].date, "2026-08-10");
+  assert.equal(copied[0].employeeId, "maya");
+  assert.equal(copied[0].breakMinutes, 15);
+});
+
 test("labour cost is hidden when wages are missing", () => {
   const estimate = calculateLabourCostEstimate({
     chartData: [{ hour: "09:00", total: 2, barista: 2 }],
@@ -998,6 +1150,10 @@ test("auth helpers return friendly messages and validate reset email", () => {
   assert.equal(
     getFriendlyAuthErrorMessage({ code: "auth/email-already-in-use" }),
     "An account already exists for this email. Try logging in instead."
+  );
+  assert.equal(
+    getFriendlyAuthErrorMessage({ code: "auth/requires-recent-login" }),
+    "For security, log out and back in, then try this account change again."
   );
 });
 

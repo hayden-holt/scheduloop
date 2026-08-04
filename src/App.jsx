@@ -12,6 +12,9 @@ const LoginPage = lazy(() => import("./pages/LoginPage"));
 const SignupPage = lazy(() => import("./pages/SignupPage"));
 const OnboardingPage = lazy(() => import("./pages/OnboardingPage"));
 const DashboardPage = lazy(() => import("./pages/DashboardPage"));
+const RotaPage = lazy(() => import("./pages/RotaPage"));
+const SettingsPage = lazy(() => import("./pages/SettingsPage"));
+const AppShell = lazy(() => import("./components/AppShell"));
 
 function RouteError({ message }) {
   return (
@@ -89,7 +92,39 @@ function AppRoutes() {
             <ProtectedRoute>
               <ProfileReadyRoute>
                 <CompleteProfileRoute>
-                  <DashboardPage />
+                  <AppShell>
+                    <DashboardPage />
+                  </AppShell>
+                </CompleteProfileRoute>
+              </ProfileReadyRoute>
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/rota"
+          element={
+            <ProtectedRoute>
+              <ProfileReadyRoute>
+                <CompleteProfileRoute>
+                  <AppShell>
+                    <RotaPage />
+                  </AppShell>
+                </CompleteProfileRoute>
+              </ProfileReadyRoute>
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/settings"
+          element={
+            <ProtectedRoute>
+              <ProfileReadyRoute>
+                <CompleteProfileRoute>
+                  <AppShell>
+                    <SettingsPage />
+                  </AppShell>
                 </CompleteProfileRoute>
               </ProfileReadyRoute>
             </ProtectedRoute>

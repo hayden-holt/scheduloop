@@ -6,6 +6,8 @@ import {
   sendPasswordResetEmail,
   signInWithEmailAndPassword,
   signOut,
+  updateEmail,
+  updatePassword,
 } from "firebase/auth";
 import { auth } from "../firebase";
 import { AuthContext } from "./AuthContext";
@@ -59,6 +61,25 @@ export function AuthProvider({ children }) {
       logout: async () => {
         await signOut(auth);
         setUser(null);
+      },
+      updateUserEmail: async (email) => {
+        if (!auth.currentUser) {
+          throw new Error("You must be logged in to update your email.");
+        }
+
+        const nextEmail = String(email || "").trim();
+        await updateEmail(auth.currentUser, nextEmail);
+        setUser({
+          uid: auth.currentUser.uid,
+          email: auth.currentUser.email,
+        });
+      },
+      updateUserPassword: async (password) => {
+        if (!auth.currentUser) {
+          throw new Error("You must be logged in to update your password.");
+        }
+
+        await updatePassword(auth.currentUser, password);
       },
       resetPassword: async (email) => sendPasswordResetEmail(auth, email),
     }),

@@ -54,6 +54,44 @@ service cloud.firestore {
       ]);
     }
 
+    function hasAllowedEmployeeKeys() {
+      return request.resource.data.keys().hasOnly([
+        'displayName',
+        'defaultRole',
+        'hourlyRate',
+        'active',
+        'ownerUid',
+        'createdAt',
+        'updatedAt'
+      ]);
+    }
+
+    function hasAllowedShiftKeys() {
+      return request.resource.data.keys().hasOnly([
+        'employeeId',
+        'date',
+        'startTime',
+        'endTime',
+        'roleId',
+        'breakMinutes',
+        'weekStart',
+        'ownerUid',
+        'createdAt',
+        'updatedAt'
+      ]);
+    }
+
+    function hasAllowedRotaWeekKeys() {
+      return request.resource.data.keys().hasOnly([
+        'weekStart',
+        'status',
+        'ownerUid',
+        'publishedAt',
+        'createdAt',
+        'updatedAt'
+      ]);
+    }
+
     match /businessProfiles/{userId} {
       allow read: if isProfileOwner(userId);
       allow create: if isProfileOwner(userId)
@@ -64,6 +102,43 @@ service cloud.firestore {
         && request.resource.data.ownerUid == request.auth.uid
         && changesAllowedProfileKeysOnly();
       allow delete: if false;
+
+      match /employees/{employeeId} {
+        allow read: if isProfileOwner(userId);
+        allow create: if isProfileOwner(userId)
+          && request.resource.data.ownerUid == request.auth.uid
+          && hasAllowedEmployeeKeys();
+        allow update: if isProfileOwner(userId)
+          && resource.data.ownerUid == request.auth.uid
+          && request.resource.data.ownerUid == request.auth.uid
+          && hasAllowedEmployeeKeys();
+        allow delete: if false;
+      }
+
+      match /shifts/{shiftId} {
+        allow read: if isProfileOwner(userId);
+        allow create: if isProfileOwner(userId)
+          && request.resource.data.ownerUid == request.auth.uid
+          && hasAllowedShiftKeys();
+        allow update: if isProfileOwner(userId)
+          && resource.data.ownerUid == request.auth.uid
+          && request.resource.data.ownerUid == request.auth.uid
+          && hasAllowedShiftKeys();
+        allow delete: if isProfileOwner(userId)
+          && resource.data.ownerUid == request.auth.uid;
+      }
+
+      match /rotaWeeks/{weekStart} {
+        allow read: if isProfileOwner(userId);
+        allow create: if isProfileOwner(userId)
+          && request.resource.data.ownerUid == request.auth.uid
+          && hasAllowedRotaWeekKeys();
+        allow update: if isProfileOwner(userId)
+          && resource.data.ownerUid == request.auth.uid
+          && request.resource.data.ownerUid == request.auth.uid
+          && hasAllowedRotaWeekKeys();
+        allow delete: if false;
+      }
     }
 
     match /{document=**} {

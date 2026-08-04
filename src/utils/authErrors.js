@@ -25,6 +25,10 @@ export function getFriendlyAuthErrorMessage(error, fallback) {
     return "Too many attempts. Please wait a moment before trying again.";
   }
 
+  if (code === "auth/requires-recent-login") {
+    return "For security, log out and back in, then try this account change again.";
+  }
+
   if (code === "auth/network-request-failed") {
     return "Network problem. Check your connection and try again.";
   }
