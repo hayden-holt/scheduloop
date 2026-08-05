@@ -236,3 +236,104 @@ export async function createCopiedWeekShifts(userId, shifts) {
     ownerUid: userId,
   }));
 }
+
+export async function copyWeekShiftsAsDraft(userId, weekStartKey, shifts) {
+  requireUserId(userId);
+  const batch = writeBatch(db);
+  const refs = [];
+
+  shifts.forEach((shift) => {
+    const ref = doc(profileCollection(userId, "shifts"));
+    refs.push(ref);
+    batch.set(ref, {
+      employeeId: shift.employeeId,
+      date: shift.date,
+      startTime: shift.startTime,
+      endTime: shift.endTime,
+      roleId: shift.roleId,
+      breakMinutes: normalizeBreakMinutes(shift.breakMinutes),
+      weekStart: shift.weekStart || weekStartKey,
+      ownerUid: userId,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
+  });
+
+  batch.set(
+    profileDoc(userId, "rotaWeeks", weekStartKey),
+    {
+      weekStart: weekStartKey,
+      status: ROTA_STATUS.draft,
+      ownerUid: userId,
+      updatedAt: serverTimestamp(),
+    },
+    { merge: true }
+  );
+
+  await batch.commit();
+
+  return shifts.map((shift, index) => ({
+    id: refs[index].id,
+    ...shift,
+    weekStart: shift.weekStart || weekStartKey,
+    ownerUid: userId,
+  }));
+}
+
+export async function replaceWeekShiftsAsDraft(userId, weekStartKey, shifts) {
+  requireUserId(userId);
+  const weekEndKey = addDaysToDateKey(weekStartKey, 7);
+  const currentSnapshot = await getDocs(
+    query(
+      profileCollection(userId, "shifts"),
+      where("date", ">=", weekStartKey),
+      where("date", "<", weekEndKey)
+    )
+  );
+  const batch = writeBatch(db);
+  const refs = [];
+
+  currentSnapshot.docs.forEach((snapshot) => {
+    batch.delete(profileDoc(userId, "shifts", snapshot.id));
+  });
+
+  shifts.forEach((shift) => {
+    const ref = doc(profileCollection(userId, "shifts"));
+    refs.push(ref);
+    batch.set(ref, {
+      employeeId: shift.employeeId,
+      date: shift.date,
+      startTime: shift.startTime,
+      endTime: shift.endTime,
+      roleId: shift.roleId,
+      breakMinutes: normalizeBreakMinutes(shift.breakMinutes),
+      weekStart: shift.weekStart || weekStartKey,
+      ownerUid: userId,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
+  });
+
+  batch.set(
+    profileDoc(userId, "rotaWeeks", weekStartKey),
+    {
+      weekStart: weekStartKey,
+      status: ROTA_STATUS.draft,
+      ownerUid: userId,
+      updatedAt: serverTimestamp(),
+    },
+    { merge: true }
+  );
+
+  await batch.commit();
+
+  return {
+    deletedCount: currentSnapshot.docs.length,
+    shifts: shifts.map((shift, index) => ({
+      id: refs[index].id,
+      ...shift,
+      weekStart: shift.weekStart || weekStartKey,
+      ownerUid: userId,
+    })),
+  };
+}
