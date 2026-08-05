@@ -1749,6 +1749,12 @@ html, body, #root {
   border: 1px solid rgba(248, 113, 113, 0.35);
 }
 
+.banner-success {
+  color: #166534;
+  background: rgba(34, 197, 94, 0.14);
+  border: 1px solid rgba(34, 197, 94, 0.28);
+}
+
 .business-select {
   padding: 6px 10px;
   border-radius: 999px;
@@ -4954,6 +4960,26 @@ html, body, #root {
   font-size: 24px;
 }
 
+.rota-hero-actions {
+  display: grid;
+  gap: 10px;
+  justify-items: end;
+}
+
+.rota-share-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.rota-share-message {
+  margin-top: 8px;
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 700;
+}
+
 .rota-hero p,
 .coverage-summary p,
 .rota-empty-state p {
@@ -4992,6 +5018,40 @@ html, body, #root {
 
 .rota-summary-grid {
   grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.rota-summary-strip {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 0;
+  overflow: hidden;
+  border: 1px solid var(--border-subtle);
+  border-radius: 16px;
+  background: var(--bg-card);
+}
+
+.rota-summary-strip div {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  padding: 14px 16px;
+  border-right: 1px solid var(--border-subtle);
+}
+
+.rota-summary-strip div:last-child {
+  border-right: 0;
+}
+
+.rota-summary-strip span {
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.rota-summary-strip strong {
+  color: var(--text-main);
+  font-size: 18px;
 }
 
 .simple-rota-board {
@@ -5188,6 +5248,68 @@ html, body, #root {
   grid-column: 1 / -1;
 }
 
+.rota-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(15, 23, 42, 0.46);
+}
+
+.rota-modal {
+  display: grid;
+  gap: 18px;
+  width: min(720px, 96vw);
+  max-height: min(820px, 92vh);
+  overflow: auto;
+  padding: 20px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 18px;
+  background: var(--bg-card);
+  box-shadow: 0 24px 70px rgba(15, 23, 42, 0.2);
+}
+
+.rota-modal-wide {
+  width: min(1040px, 96vw);
+}
+
+.rota-modal-header,
+.rota-dialog-panel-header {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.rota-modal-header h2,
+.rota-dialog-panel h3 {
+  margin: 0;
+}
+
+.rota-modal-header p {
+  margin: 6px 0 0;
+  color: var(--text-muted);
+}
+
+.rota-dialog-split {
+  display: grid;
+  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+  gap: 16px;
+}
+
+.rota-dialog-panel {
+  display: grid;
+  align-content: start;
+  gap: 14px;
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 14px;
+  background: var(--bg-elevated);
+}
+
 .rota-main-grid {
   grid-template-columns: minmax(0, 1fr) 320px;
   align-items: start;
@@ -5277,10 +5399,15 @@ html, body, #root {
 .rota-shift-card {
   display: grid;
   gap: 6px;
+  width: 100%;
   padding: 8px;
   border: 1px solid var(--border-subtle);
   border-radius: 12px;
   background: color-mix(in srgb, var(--bg-card) 88%, var(--accent) 12%);
+  color: var(--text-main);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
 }
 
 .rota-shift-card > button:first-child {
@@ -5292,6 +5419,13 @@ html, body, #root {
   color: var(--text-main);
   text-align: left;
   cursor: pointer;
+}
+
+.rota-shift-card:hover,
+.rota-shift-card:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
 }
 
 .rota-shift-card span,
@@ -5309,6 +5443,27 @@ html, body, #root {
   font-size: 12px;
   font-weight: 700;
   cursor: pointer;
+}
+
+.rota-cell-add {
+  width: 100%;
+  min-height: 38px;
+  border: 1px dashed var(--border-subtle);
+  border-radius: 10px;
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.rota-cell-add:hover,
+.rota-cell-add:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--accent-soft);
 }
 
 .rota-side-panel,
@@ -5411,7 +5566,7 @@ html, body, #root {
 
 .coverage-row {
   display: grid;
-  grid-template-columns: 1.2fr 1fr 1fr 1fr;
+  grid-template-columns: 1fr 0.8fr 0.8fr 0.7fr 0.9fr 1.8fr;
   gap: 8px;
   padding: 10px 12px;
   border-bottom: 1px solid var(--border-subtle);
@@ -5436,8 +5591,57 @@ html, body, #root {
   background: rgba(245, 158, 11, 0.1);
 }
 
+.coverage-roleMismatch {
+  background: rgba(79, 140, 255, 0.1);
+}
+
 .coverage-matched {
   background: rgba(34, 197, 94, 0.08);
+}
+
+.copy-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.copy-summary-grid div,
+.copy-issue-list {
+  padding: 12px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+  background: var(--bg-elevated);
+}
+
+.copy-summary-grid span {
+  display: block;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.copy-summary-grid strong {
+  display: block;
+  margin-top: 4px;
+  font-size: 20px;
+}
+
+.copy-issue-list {
+  display: grid;
+  gap: 8px;
+}
+
+.copy-issue-list h3,
+.copy-issue-list p {
+  margin: 0;
+}
+
+.copy-issue-list p {
+  color: var(--text-muted);
+}
+
+.rota-print-sheet {
+  display: none;
 }
 
 @media (max-width: 1100px) {
@@ -5500,7 +5704,21 @@ html, body, #root {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .rota-summary-strip,
+  .copy-summary-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .rota-summary-strip div {
+    border-right: 0;
+    border-bottom: 1px solid var(--border-subtle);
+  }
+
   .rota-main-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .rota-dialog-split {
     grid-template-columns: 1fr;
   }
 }
@@ -5510,7 +5728,9 @@ html, body, #root {
   .dashboard-control-bar,
   .rota-hero,
   .rota-toolbar,
-  .coverage-summary-header {
+  .coverage-summary-header,
+  .rota-modal-header,
+  .rota-dialog-panel-header {
     align-items: stretch;
     grid-template-columns: 1fr;
     flex-direction: column;
@@ -5522,6 +5742,8 @@ html, body, #root {
   }
 
   .rota-summary-grid,
+  .rota-summary-strip,
+  .copy-summary-grid,
   .rota-form-grid,
   .settings-field-grid.two,
   .settings-field-grid.three,
@@ -5550,7 +5772,89 @@ html, body, #root {
   }
 
   .coverage-row {
-    grid-template-columns: 1fr 0.8fr 0.8fr 0.8fr;
+    grid-template-columns: 1fr;
     font-size: 12px;
+  }
+
+  .rota-modal-backdrop {
+    align-items: start;
+    padding: 10px;
+  }
+}
+
+@media print {
+  body {
+    background: #fff;
+  }
+
+  .app-shell-sidebar,
+  .app-shell-topbar,
+  .app-shell-mobile-toggle,
+  .app-shell-mobile-backdrop,
+  .rota-page > :not(.rota-print-sheet) {
+    display: none !important;
+  }
+
+  .app-shell,
+  .app-shell-main,
+  .rota-page {
+    display: block !important;
+    min-height: auto;
+    padding: 0 !important;
+    background: #fff !important;
+    color: #111827 !important;
+  }
+
+  .rota-print-sheet {
+    display: block;
+    color: #111827;
+    font: 12px/1.35 Arial, sans-serif;
+  }
+
+  .rota-print-sheet header {
+    margin-bottom: 18px;
+    padding-bottom: 12px;
+    border-bottom: 2px solid #111827;
+  }
+
+  .rota-print-sheet h1,
+  .rota-print-sheet p {
+    margin: 0 0 5px;
+  }
+
+  .rota-print-sheet table {
+    width: 100%;
+    border-collapse: collapse;
+    page-break-inside: auto;
+  }
+
+  .rota-print-sheet thead {
+    display: table-header-group;
+  }
+
+  .rota-print-sheet tr {
+    page-break-inside: avoid;
+  }
+
+  .rota-print-sheet th,
+  .rota-print-sheet td {
+    vertical-align: top;
+    border: 1px solid #9ca3af;
+    padding: 7px;
+    text-align: left;
+  }
+
+  .rota-print-sheet th {
+    background: #f3f4f6;
+  }
+
+  .rota-print-sheet td div {
+    display: grid;
+    gap: 2px;
+    margin-bottom: 6px;
+  }
+
+  .rota-print-sheet td div:last-child {
+    margin-bottom: 0;
   }
 }

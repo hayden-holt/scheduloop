@@ -56,10 +56,15 @@ import {
   formatSlotRange,
 } from "../src/utils/rotaGuidance.js";
 import {
+  analyseCopyPreviousWeek,
   calculateCoverageForDay,
+  calculateShiftIntervalContribution,
   calculateShiftDurationHours,
   calculateWeeklyRotaTotals,
+  COVERAGE_STATUS,
   copyShiftsToWeek,
+  formatCoverageValue,
+  formatRotaSummaryText,
   getWeekDays,
   getWeekStartDateKey,
   hasOverlappingShift,
@@ -1073,6 +1078,157 @@ test("coverage compares recommended and scheduled staffing", () => {
   assert.equal(rows[1].roleCoverage[0].difference, -1);
 });
 
+test("coverage counts partial interval overlap proportionally", () => {
+  const rows = calculateCoverageForDay({
+    forecastPoints: [{ hour: "09:00", total: 1, barista: 1 }],
+    shifts: [
+      {
+        employeeId: "maya",
+        date: "2026-08-10",
+        startTime: "09:30",
+        endTime: "10:00",
+        roleId: "barista",
+      },
+    ],
+    roles: [{ id: "barista", name: "Barista" }],
+    intervalMinutes: 60,
+  });
+
+  assert.equal(
+    calculateShiftIntervalContribution(
+      { startTime: "09:15", endTime: "09:45" },
+      9 * 60,
+      10 * 60
+    ),
+    0.5
+  );
+  assert.equal(rows[0].scheduledTotal, 0.5);
+  assert.equal(rows[0].difference, -0.5);
+  assert.equal(rows[0].status, COVERAGE_STATUS.under);
+});
+
+test("coverage combines partial shifts and respects adjacent boundaries", () => {
+  const rows = calculateCoverageForDay({
+    forecastPoints: [
+      { hour: "09:00", total: 1, floor: 1 },
+      { hour: "10:00", total: 1, floor: 1 },
+    ],
+    shifts: [
+      {
+        employeeId: "maya",
+        date: "2026-08-10",
+        startTime: "09:00",
+        endTime: "09:30",
+        roleId: "floor",
+      },
+      {
+        employeeId: "sam",
+        date: "2026-08-10",
+        startTime: "09:30",
+        endTime: "10:00",
+        roleId: "floor",
+      },
+      {
+        employeeId: "nia",
+        date: "2026-08-10",
+        startTime: "11:00",
+        endTime: "12:00",
+        roleId: "floor",
+      },
+    ],
+    roles: [{ id: "floor", name: "Floor" }],
+    intervalMinutes: 60,
+  });
+
+  assert.equal(rows[0].scheduledTotal, 1);
+  assert.equal(rows[0].status, COVERAGE_STATUS.matched);
+  assert.equal(rows[1].scheduledTotal, 0);
+  assert.equal(rows[1].status, COVERAGE_STATUS.under);
+});
+
+test("coverage handles shifts spanning multiple shorter intervals", () => {
+  const rows = calculateCoverageForDay({
+    forecastPoints: [
+      { hour: "09:00", total: 1, floor: 1 },
+      { hour: "09:30", total: 1, floor: 1 },
+      { hour: "10:00", total: 1, floor: 1 },
+      { hour: "10:30", total: 1, floor: 1 },
+    ],
+    shifts: [
+      {
+        employeeId: "maya",
+        date: "2026-08-10",
+        startTime: "09:15",
+        endTime: "10:45",
+        roleId: "floor",
+      },
+    ],
+    roles: [{ id: "floor", name: "Floor" }],
+    intervalMinutes: 30,
+  });
+
+  assert.deepEqual(
+    rows.map((row) => row.scheduledTotal),
+    [0.5, 1, 1, 0.5]
+  );
+});
+
+test("coverage flags role mismatch when total cover matches but roles are wrong", () => {
+  const rows = calculateCoverageForDay({
+    forecastPoints: [{ hour: "12:00", total: 2, barista: 1, kitchen: 1 }],
+    shifts: [
+      {
+        employeeId: "maya",
+        date: "2026-08-10",
+        startTime: "12:00",
+        endTime: "13:00",
+        roleId: "barista",
+      },
+      {
+        employeeId: "sam",
+        date: "2026-08-10",
+        startTime: "12:00",
+        endTime: "13:00",
+        roleId: "barista",
+      },
+    ],
+    roles: [
+      { id: "barista", name: "Barista" },
+      { id: "kitchen", name: "Kitchen" },
+    ],
+    intervalMinutes: 60,
+  });
+
+  assert.equal(rows[0].scheduledTotal, 2);
+  assert.equal(rows[0].difference, 0);
+  assert.equal(rows[0].status, COVERAGE_STATUS.roleMismatch);
+  assert.equal(rows[0].roleCoverage[0].difference, 1);
+  assert.equal(rows[0].roleCoverage[1].difference, -1);
+});
+
+test("coverage formatting and tolerance avoid floating point noise", () => {
+  const rows = calculateCoverageForDay({
+    forecastPoints: [{ hour: "09:00", total: 1.005, floor: 1.005 }],
+    shifts: [
+      {
+        employeeId: "maya",
+        date: "2026-08-10",
+        startTime: "09:00",
+        endTime: "10:00",
+        roleId: "floor",
+      },
+    ],
+    roles: [{ id: "floor", name: "Floor" }],
+    intervalMinutes: 60,
+  });
+
+  assert.equal(formatCoverageValue(1), "1");
+  assert.equal(formatCoverageValue(1.5), "1.5");
+  assert.equal(formatCoverageValue(2.25), "2.25");
+  assert.equal(rows[0].difference, 0);
+  assert.equal(rows[0].status, COVERAGE_STATUS.matched);
+});
+
 test("copy previous week shifts keeps details and moves dates", () => {
   const copied = copyShiftsToWeek(
     [
@@ -1093,6 +1249,152 @@ test("copy previous week shifts keeps details and moves dates", () => {
   assert.equal(copied[0].date, "2026-08-10");
   assert.equal(copied[0].employeeId, "maya");
   assert.equal(copied[0].breakMinutes, 15);
+});
+
+test("copy previous week analysis detects duplicates, overlaps, inactive and missing employees", () => {
+  const previousShifts = [
+    {
+      id: "previous-duplicate",
+      employeeId: "maya",
+      date: "2026-08-03",
+      startTime: "09:00",
+      endTime: "13:00",
+      roleId: "barista",
+      breakMinutes: 15,
+    },
+    {
+      id: "previous-adjacent",
+      employeeId: "maya",
+      date: "2026-08-03",
+      startTime: "13:00",
+      endTime: "14:00",
+      roleId: "barista",
+      breakMinutes: 0,
+    },
+    {
+      id: "previous-overlap",
+      employeeId: "maya",
+      date: "2026-08-04",
+      startTime: "11:00",
+      endTime: "15:00",
+      roleId: "kitchen",
+      breakMinutes: 0,
+    },
+    {
+      id: "previous-inactive",
+      employeeId: "sam",
+      date: "2026-08-05",
+      startTime: "09:00",
+      endTime: "10:00",
+      roleId: "barista",
+      breakMinutes: 0,
+    },
+    {
+      id: "previous-missing",
+      employeeId: "missing",
+      date: "2026-08-06",
+      startTime: "09:00",
+      endTime: "10:00",
+      roleId: "barista",
+      breakMinutes: 0,
+    },
+  ];
+  const analysis = analyseCopyPreviousWeek({
+    previousShifts,
+    targetWeekStartKey: "2026-08-10",
+    targetShifts: [
+      {
+        id: "current-duplicate",
+        employeeId: "maya",
+        date: "2026-08-10",
+        startTime: "09:00",
+        endTime: "13:00",
+        roleId: "barista",
+        breakMinutes: 15,
+      },
+      {
+        id: "current-overlap",
+        employeeId: "maya",
+        date: "2026-08-11",
+        startTime: "10:00",
+        endTime: "12:00",
+        roleId: "barista",
+        breakMinutes: 0,
+      },
+    ],
+    employees: [
+      { id: "maya", displayName: "Maya", active: true },
+      { id: "sam", displayName: "Sam", active: false },
+    ],
+  });
+
+  assert.equal(analysis.summary.totalPrevious, 5);
+  assert.equal(analysis.summary.existingTargetShifts, 2);
+  assert.equal(analysis.summary.safe, 1);
+  assert.equal(analysis.summary.exactDuplicates, 1);
+  assert.equal(analysis.summary.overlaps, 1);
+  assert.equal(analysis.summary.inactiveEmployees, 1);
+  assert.equal(analysis.summary.missingEmployees, 1);
+  assert.equal(analysis.safeShifts[0].startTime, "13:00");
+  assert.equal(analysis.safeShifts[0].date, "2026-08-10");
+});
+
+test("copy previous week analysis catches overlaps between copied shifts", () => {
+  const analysis = analyseCopyPreviousWeek({
+    previousShifts: [
+      {
+        employeeId: "maya",
+        date: "2026-08-03",
+        startTime: "09:00",
+        endTime: "11:00",
+        roleId: "barista",
+      },
+      {
+        employeeId: "maya",
+        date: "2026-08-03",
+        startTime: "10:30",
+        endTime: "12:00",
+        roleId: "barista",
+      },
+    ],
+    targetWeekStartKey: "2026-08-10",
+    targetShifts: [],
+    employees: [{ id: "maya", displayName: "Maya", active: true }],
+  });
+
+  assert.equal(analysis.summary.safe, 1);
+  assert.equal(analysis.summary.overlaps, 1);
+  assert.equal(analysis.skippedShifts[0].issues.includes("proposedOverlap"), true);
+});
+
+test("employee-facing rota summary groups shifts without private cost details", () => {
+  const weekStart = getWeekStartDateKey("2026-08-12");
+  const summary = formatRotaSummaryText({
+    businessName: "Loop Cafe",
+    location: "Leeds",
+    weekStart,
+    status: "published",
+    shifts: [
+      {
+        employeeId: "maya",
+        date: "2026-08-10",
+        startTime: "09:00",
+        endTime: "13:00",
+        roleId: "barista",
+        breakMinutes: 15,
+      },
+    ],
+    employees: [{ id: "maya", displayName: "Maya", hourlyRate: 14 }],
+    roles: [{ id: "barista", name: "Barista", hourlyWage: 12 }],
+  });
+
+  assert.equal(summary.includes("Loop Cafe - Leeds"), true);
+  assert.equal(summary.includes("Status: Published"), true);
+  assert.equal(summary.includes("Maya"), true);
+  assert.equal(summary.includes("- Maya: 09:00-13:00, Barista, 15 min break"), true);
+  assert.equal(summary.includes("14"), false);
+  assert.equal(summary.toLowerCase().includes("forecast"), false);
+  assert.equal(summary.includes("£"), false);
 });
 
 test("labour cost is hidden when wages are missing", () => {
