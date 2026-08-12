@@ -12,6 +12,17 @@ import {
 } from "./roleDemand.js";
 
 export const MAX_CSV_BYTES = 1024 * 1024;
+export const MAX_CSV_ROWS = 5000;
+export const MAX_CSV_COLUMNS = 80;
+export const MAX_CSV_CELL_CHARS = 500;
+
+const SAFE_CSV_MIME_TYPES = new Set([
+  "",
+  "text/csv",
+  "application/csv",
+  "application/vnd.ms-excel",
+  "text/plain",
+]);
 
 const ACTUAL_STAFF_PATTERNS = [
   /^staff$/,
@@ -29,6 +40,17 @@ export function assertCsvFileIsSafe(file, maxBytes = MAX_CSV_BYTES) {
 
   if (file.size > maxBytes) {
     throw new Error("CSV file is too large. Use a file under 1 MB.");
+  }
+
+  const fileName = String(file.name || "").toLowerCase();
+  const fileType = String(file.type || "").toLowerCase();
+
+  if (fileName && !fileName.endsWith(".csv")) {
+    throw new Error("Upload a CSV file with a .csv extension.");
+  }
+
+  if (!SAFE_CSV_MIME_TYPES.has(fileType)) {
+    throw new Error("Upload a plain CSV file.");
   }
 }
 
@@ -88,6 +110,55 @@ export function parseCsv(text) {
 
 function normalizeHeader(header) {
   return header.replace(/^\uFEFF/, "").trim().toLowerCase();
+}
+
+function isDangerousSpreadsheetValue(value) {
+  const trimmed = String(value ?? "").trimStart();
+  if (!trimmed) return false;
+
+  const firstChar = trimmed[0];
+  if (!["=", "+", "-", "@"].includes(firstChar)) return false;
+
+  return !/^-?\d+(\.\d+)?$/.test(trimmed);
+}
+
+function validateCsvRows(rows) {
+  if (rows.length - 1 > MAX_CSV_ROWS) {
+    throw new Error(`CSV has too many rows. Use ${MAX_CSV_ROWS} rows or fewer.`);
+  }
+
+  const headers = rows[0] || [];
+  if (headers.length > MAX_CSV_COLUMNS) {
+    throw new Error(`CSV has too many columns. Use ${MAX_CSV_COLUMNS} columns or fewer.`);
+  }
+
+  const seenHeaders = new Set();
+  headers.forEach((header) => {
+    const normalized = normalizeHeader(header);
+    if (!normalized) {
+      throw new Error("CSV headers cannot be blank.");
+    }
+    if (seenHeaders.has(normalized)) {
+      throw new Error(`CSV has a duplicate header: ${normalized}.`);
+    }
+    seenHeaders.add(normalized);
+  });
+
+  rows.forEach((row, rowIndex) => {
+    if (row.length > MAX_CSV_COLUMNS) {
+      throw new Error(`CSV row ${rowIndex + 1} has too many columns.`);
+    }
+
+    row.forEach((cell) => {
+      if (String(cell ?? "").length > MAX_CSV_CELL_CHARS) {
+        throw new Error("CSV contains a value that is too long.");
+      }
+
+      if (isDangerousSpreadsheetValue(cell)) {
+        throw new Error("CSV contains spreadsheet formula-like values. Remove formulas before uploading.");
+      }
+    });
+  });
 }
 
 function findTimestampColumn(headers) {
@@ -282,6 +353,7 @@ export function parseCsvDemand(
   if (rows.length < 2) {
     throw new Error("The CSV looks empty or has no data rows.");
   }
+  validateCsvRows(rows);
 
   const headers = rows[0];
   const timeIdx = findTimestampColumn(headers);

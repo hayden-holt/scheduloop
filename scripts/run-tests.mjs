@@ -11,7 +11,11 @@ import {
   isOpeningHoursValid,
   toLocalDateKey,
 } from "../src/utils/schedule.js";
-import { parseCsv, parseCsvDemand } from "../src/utils/csvDemand.js";
+import {
+  assertCsvFileIsSafe,
+  parseCsv,
+  parseCsvDemand,
+} from "../src/utils/csvDemand.js";
 import {
   calculateRoleStaff,
   applyMinimumTotalStaff,
@@ -71,8 +75,8 @@ import {
   validateShift,
 } from "../src/utils/rota.js";
 import {
-  canRequestPasswordReset,
   getFriendlyAuthErrorMessage,
+  isValidEmail,
 } from "../src/utils/authErrors.js";
 import {
   applyBusinessRhythmToCurve,
@@ -493,6 +497,32 @@ test("CSV demand rejects files without timestamp columns", () => {
   assert.throws(
     () => parseCsvDemand("name,count\nAlice,1"),
     /Could not find/
+  );
+});
+
+test("CSV file safety rejects non-CSV files", () => {
+  assert.doesNotThrow(() =>
+    assertCsvFileIsSafe({ name: "demand.csv", type: "text/csv", size: 128 })
+  );
+  assert.throws(
+    () => assertCsvFileIsSafe({ name: "demand.txt", type: "text/plain", size: 128 }),
+    /CSV file/
+  );
+  assert.throws(
+    () => assertCsvFileIsSafe({ name: "demand.csv", type: "application/json", size: 128 }),
+    /plain CSV/
+  );
+});
+
+test("CSV demand rejects duplicate headers and formula-like cells", () => {
+  assert.throws(
+    () =>
+      parseCsvDemand("timestamp,timestamp\n2026-01-02T09:00:00,2026-01-02T09:00:00"),
+    /duplicate header/
+  );
+  assert.throws(
+    () => parseCsvDemand("timestamp,orders\n2026-01-02T09:00:00,=SUM(A1:A2)"),
+    /formula-like/
   );
 });
 
@@ -1446,16 +1476,33 @@ test("hourly wage normalization treats blank and invalid values as missing", () 
   assert.equal(normalizeHourlyWage("10.555"), 10.56);
 });
 
-test("auth helpers return friendly messages and validate reset email", () => {
-  assert.equal(canRequestPasswordReset("owner@example.com"), true);
-  assert.equal(canRequestPasswordReset("not-an-email"), false);
+test("auth helpers return friendly messages and validate email links", () => {
+  assert.equal(isValidEmail("owner@example.com"), true);
+  assert.equal(isValidEmail("not-an-email"), false);
   assert.equal(
-    getFriendlyAuthErrorMessage({ code: "auth/email-already-in-use" }),
-    "An account already exists for this email. Try logging in instead."
+    getFriendlyAuthErrorMessage({ code: "auth/expired-action-code" }),
+    "This sign-in link has expired. Request a new secure link."
   );
   assert.equal(
-    getFriendlyAuthErrorMessage({ code: "auth/requires-recent-login" }),
-    "For security, log out and back in, then try this account change again."
+    getFriendlyAuthErrorMessage({ code: "auth/invalid-action-code" }),
+    "This sign-in link is not valid. Request a new secure link."
+  );
+});
+
+test("Firestore rules keep business data membership-gated", () => {
+  const rules = fs.readFileSync(
+    new URL("../firestore.rules", import.meta.url),
+    "utf8"
+  );
+
+  assert.match(rules, /match \/memberships\/\{userId\}/);
+  assert.match(rules, /membership\(\)\.businessId == businessId/);
+  assert.match(rules, /request\.resource\.data\.businessId == businessId/);
+  assert.match(rules, /allow create, update, delete: if false;/);
+  assert.doesNotMatch(rules, /allow\s+read,\s*write:\s*if\s+true/);
+  assert.doesNotMatch(
+    rules,
+    /allow\s+read,\s*write:\s*if\s+request\.auth\s*!=\s*null/
   );
 });
 

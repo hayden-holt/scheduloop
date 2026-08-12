@@ -218,6 +218,66 @@ html, body, #root {
 .auth-switch a:hover {
   text-decoration: underline;
 }
+
+.auth-legal-links {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.legal-page {
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 36px;
+}
+
+.legal-card {
+  width: min(100%, 840px);
+  padding: 28px;
+  border-radius: var(--radius-md);
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  box-shadow: var(--shadow-soft);
+}
+
+.legal-card h1 {
+  margin: 4px 0 8px;
+  font-size: 28px;
+}
+
+.legal-card h2 {
+  margin: 22px 0 8px;
+  font-size: 17px;
+}
+
+.legal-card p,
+.legal-card li {
+  color: var(--text-muted);
+  line-height: 1.55;
+}
+
+.legal-updated {
+  margin-top: 0;
+  font-size: 13px;
+}
+
+.legal-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 24px;
+}
+
+.legal-nav a {
+  color: var(--accent);
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.legal-nav a:hover {
+  text-decoration: underline;
+}
 .onboarding-screen {
   align-items: flex-start;
   padding-top: 34px;
@@ -4750,6 +4810,35 @@ html, body, #root {
   font-size: 18px;
 }
 
+.settings-definition-list {
+  margin: 0;
+  display: grid;
+  gap: 10px;
+}
+
+.settings-definition-list div {
+  display: grid;
+  gap: 3px;
+  padding: 10px 12px;
+  border: 1px solid rgba(79, 140, 255, 0.18);
+  border-radius: 12px;
+  background: rgba(79, 140, 255, 0.08);
+}
+
+.settings-definition-list dt {
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.settings-definition-list dd {
+  margin: 0;
+  color: var(--text-main);
+  font-size: 13px;
+  font-weight: 800;
+  overflow-wrap: anywhere;
+}
+
 .settings-layout {
   display: grid;
   grid-template-columns: minmax(0, 1.45fr) minmax(260px, 0.65fr);
@@ -4893,6 +4982,10 @@ html, body, #root {
 .settings-link-list {
   display: grid;
   gap: 10px;
+}
+
+.settings-link-list.compact {
+  margin-top: 12px;
 }
 
 .settings-link-list a {

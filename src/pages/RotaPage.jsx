@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState } from "react";
-import { useAuth } from "../auth/AuthContext";
 import { useBusinessProfile } from "../business/BusinessProfileContext";
 import {
   normalizeOperatingRules,
@@ -59,8 +58,7 @@ import {
 } from "../rota/rotaViewHelpers";
 
 function RotaPage() {
-  const { user } = useAuth();
-  const { profile } = useBusinessProfile();
+  const { profile, businessId } = useBusinessProfile();
   const basics = normalizeBusinessProfileBasics(profile);
   const roles = useMemo(
     () => normalizeRolesForAccuracy(profile?.roles || []),
@@ -115,7 +113,7 @@ function RotaPage() {
     let active = true;
 
     async function loadRota() {
-      if (!user?.uid) {
+      if (!businessId) {
         setLoading(false);
         return;
       }
@@ -125,9 +123,9 @@ function RotaPage() {
 
       try {
         const [nextEmployees, nextShifts, nextWeek] = await Promise.all([
-          loadEmployees(user.uid),
-          loadWeekShifts(user.uid, weekStart),
-          loadRotaWeek(user.uid, weekStart),
+          loadEmployees(businessId),
+          loadWeekShifts(businessId, weekStart),
+          loadRotaWeek(businessId, weekStart),
         ]);
 
         if (!active) return;
@@ -149,7 +147,7 @@ function RotaPage() {
     return () => {
       active = false;
     };
-  }, [user?.uid, weekStart]);
+  }, [businessId, weekStart]);
 
   const visibleEmployees = useMemo(
     () => getVisibleEmployees(employees, shifts),
@@ -229,8 +227,8 @@ function RotaPage() {
   const previousWeekStart = addDaysToDateKey(weekStart, -7);
 
   const markDraftIfPublished = async () => {
-    if (weekStatus !== ROTA_STATUS.published || !user?.uid) return;
-    await saveRotaWeekStatus(user.uid, weekStart, ROTA_STATUS.draft);
+    if (weekStatus !== ROTA_STATUS.published || !businessId) return;
+    await saveRotaWeekStatus(businessId, weekStart, ROTA_STATUS.draft);
     setWeekStatus(ROTA_STATUS.draft);
   };
 
@@ -250,12 +248,12 @@ function RotaPage() {
     event.preventDefault();
     const result = validateEmployee(employeeForm);
     setEmployeeErrors(result.errors);
-    if (!result.isValid || !user?.uid) return;
+    if (!result.isValid || !businessId) return;
 
     setSaving(true);
     setError("");
     try {
-      const saved = await saveEmployee(user.uid, {
+      const saved = await saveEmployee(businessId, {
         ...employeeForm,
         ...result.normalized,
       });
@@ -284,12 +282,12 @@ function RotaPage() {
     const confirmed = window.confirm(
       `Deactivate ${employee.displayName}? Existing shifts stay on the rota.`
     );
-    if (!confirmed || !user?.uid) return;
+    if (!confirmed || !businessId) return;
 
     setSaving(true);
     setError("");
     try {
-      await deactivateEmployee(user.uid, employee.id);
+      await deactivateEmployee(businessId, employee.id);
       setEmployees((current) =>
         current.map((item) =>
           item.id === employee.id ? { ...item, active: false } : item
@@ -311,13 +309,13 @@ function RotaPage() {
       editingShiftId: shiftForm?.id,
     });
     setShiftErrors(result.errors);
-    if (!result.isValid || !user?.uid) return;
+    if (!result.isValid || !businessId) return;
 
     setSaving(true);
     setError("");
     try {
       await markDraftIfPublished();
-      const saved = await saveShift(user.uid, {
+      const saved = await saveShift(businessId, {
         ...shiftForm,
         breakMinutes: normalizeBreakMinutes(shiftForm.breakMinutes),
         weekStart,
@@ -343,13 +341,13 @@ function RotaPage() {
     const confirmed = window.confirm(
       `Delete the ${shift.startTime}-${shift.endTime} shift?`
     );
-    if (!confirmed || !user?.uid) return;
+    if (!confirmed || !businessId) return;
 
     setSaving(true);
     setError("");
     try {
       await markDraftIfPublished();
-      await deleteShift(user.uid, shift.id);
+      await deleteShift(businessId, shift.id);
       setShifts((current) => current.filter((item) => item.id !== shift.id));
       setShiftForm(null);
       setShiftErrors({});
@@ -362,11 +360,11 @@ function RotaPage() {
   };
 
   const handleStatusChange = async (status) => {
-    if (!user?.uid) return;
+    if (!businessId) return;
     setSaving(true);
     setError("");
     try {
-      await saveRotaWeekStatus(user.uid, weekStart, status);
+      await saveRotaWeekStatus(businessId, weekStart, status);
       setWeekStatus(status);
     } catch (err) {
       console.error("Failed to update rota status", err);
@@ -377,7 +375,7 @@ function RotaPage() {
   };
 
   const handleOpenCopyPreviousWeek = async () => {
-    if (!user?.uid) return;
+    if (!businessId) return;
 
     setCopyDialog({
       open: true,
@@ -389,7 +387,7 @@ function RotaPage() {
     });
 
     try {
-      const previousShifts = await loadWeekShifts(user.uid, previousWeekStart);
+      const previousShifts = await loadWeekShifts(businessId, previousWeekStart);
       const analysis = analyseCopyPreviousWeek({
         previousShifts,
         targetWeekStartKey: weekStart,
@@ -418,7 +416,7 @@ function RotaPage() {
   };
 
   const handleCopySafeShifts = async () => {
-    if (!user?.uid || !copyDialog.analysis) return;
+    if (!businessId || !copyDialog.analysis) return;
     const safeShifts = copyDialog.analysis.safeShifts;
     if (safeShifts.length === 0) {
       setCopyDialog((current) => ({
@@ -431,7 +429,7 @@ function RotaPage() {
     setSaving(true);
     setError("");
     try {
-      const saved = await copyWeekShiftsAsDraft(user.uid, weekStart, safeShifts);
+      const saved = await copyWeekShiftsAsDraft(businessId, weekStart, safeShifts);
       const nextShifts = [...shifts, ...saved];
       setShifts(nextShifts);
       setWeekStatus(ROTA_STATUS.draft);
@@ -457,7 +455,7 @@ function RotaPage() {
   };
 
   const handleReplaceCurrentWeek = async () => {
-    if (!user?.uid || !copyDialog.previousShifts.length) return;
+    if (!businessId || !copyDialog.previousShifts.length) return;
     const replacementAnalysis = analyseCopyPreviousWeek({
       previousShifts: copyDialog.previousShifts,
       targetWeekStartKey: weekStart,
@@ -488,7 +486,7 @@ function RotaPage() {
     setError("");
     try {
       const result = await replaceWeekShiftsAsDraft(
-        user.uid,
+        businessId,
         weekStart,
         replacementShifts
       );

@@ -15,7 +15,7 @@ Scheduloop is a workforce forecasting app for small businesses. It helps a gym, 
 
 Scheduloop currently includes:
 
-- Firebase sign up, login, and user-specific business profile storage.
+- Firebase passwordless email-link login and membership-gated business profile storage.
 - Guided onboarding for business type, roles, opening hours, and staffing assumptions.
 - A dashboard showing expected staffing need across the day.
 - Role-level staffing lines for areas such as front of house and kitchen.
@@ -83,6 +83,7 @@ VITE_FIREBASE_STORAGE_BUCKET=
 VITE_FIREBASE_MESSAGING_SENDER_ID=
 VITE_FIREBASE_APP_ID=
 VITE_FIREBASE_MEASUREMENT_ID=
+VITE_FIREBASE_APPCHECK_RECAPTCHA_SITE_KEY=
 ```
 
 Required at runtime:
@@ -93,6 +94,8 @@ Required at runtime:
 - `VITE_FIREBASE_APP_ID`
 
 The remaining values should still match the Firebase web app config when available. Keep production business data out of local sample files and browser localStorage.
+
+`VITE_FIREBASE_APPCHECK_RECAPTCHA_SITE_KEY` is used only when Firebase App Check is configured. Add the reCAPTCHA Enterprise site key for the web app, monitor App Check metrics, then enable enforcement in the Firebase Console when production traffic is confirmed healthy.
 
 ## Available Scripts
 
@@ -171,9 +174,12 @@ The app should be treated as staffing guidance, not an automatic rota system.
 
 ## Security and Data Notes
 
-- Business profiles are stored in Firestore under the signed-in user's UID.
-- Firestore rules should continue to enforce ownership checks before profile reads or writes.
-- `.env.local` is ignored by Git and must not contain shared secrets in commits.
-- Do not store sensitive production business data in localStorage or committed sample data.
+- Passwords and public self-service signup are not part of the app UI. Managers sign in with Firebase email links.
+- Authentication and authorisation are separate. A signed-in Firebase user needs either an active `memberships/{uid}` document or an existing legacy self-owned profile before business data can load.
+- New workspaces should be manually approved by creating a membership document with `businessId`, `role`, `status: "active"` and the manager email. Existing UID-based profiles can keep using their UID as `businessId` during migration.
+- Firestore rules enforce membership checks for `businessProfiles/{businessId}` and rota subcollections. Unknown authenticated users cannot create their own workspace through the client.
+- `.env.local` is ignored by Git and must not contain shared secrets in commits. Firebase web config values are public client configuration, but service-account JSON, private keys and server credentials must never be committed.
+- Do not store sensitive production business data in committed sample data. The app stores only the pending email-link address and theme preference in browser storage.
 - Sample CSV files should stay anonymised and synthetic.
-
+- Privacy and terms drafts live inside the app at `/privacy` and `/terms`; complete all TODO placeholders before production.
+- Manual Firebase, browser-storage, retention, recovery and incident-response steps are documented in `SECURITY_SETUP.md`, `SECURITY_REVIEW.md`, `docs/legal/DATA_PROCESSING_CHECKLIST.md`, `docs/security/BROWSER_STORAGE_AND_TRACKING.md`, `docs/security/RETENTION_AND_RECOVERY.md` and `docs/security/INCIDENT_RESPONSE.md`.

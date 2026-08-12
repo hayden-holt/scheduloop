@@ -255,7 +255,7 @@ function OnboardingPage() {
       await saveProfile(businessProfile);
       navigate("/");
     } catch (err) {
-      console.error(err);
+      if (import.meta.env.DEV) console.error(err);
       setSaveError(getProfileSaveErrorMessage(err));
     } finally {
       setIsSaving(false);

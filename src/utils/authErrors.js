@@ -6,27 +6,27 @@ export function getFriendlyAuthErrorMessage(error, fallback) {
   }
 
   if (
+    code === "auth/invalid-action-code" ||
     code === "auth/invalid-credential" ||
-    code === "auth/wrong-password" ||
-    code === "auth/user-not-found"
+    code === "auth/missing-email"
   ) {
-    return "We could not log you in. Check the email and password, then try again.";
+    return "This sign-in link is not valid. Request a new secure link.";
   }
 
-  if (code === "auth/email-already-in-use") {
-    return "An account already exists for this email. Try logging in instead.";
+  if (code === "auth/expired-action-code") {
+    return "This sign-in link has expired. Request a new secure link.";
   }
 
-  if (code === "auth/weak-password") {
-    return "Use a stronger password with at least 8 characters.";
+  if (code === "auth/user-disabled") {
+    return "This account cannot sign in. Contact ScheduleLoop support.";
+  }
+
+  if (code === "auth/operation-not-allowed") {
+    return "Secure sign-in is not configured yet. Contact ScheduleLoop support.";
   }
 
   if (code === "auth/too-many-requests") {
     return "Too many attempts. Please wait a moment before trying again.";
-  }
-
-  if (code === "auth/requires-recent-login") {
-    return "For security, log out and back in, then try this account change again.";
   }
 
   if (code === "auth/network-request-failed") {
@@ -36,6 +36,6 @@ export function getFriendlyAuthErrorMessage(error, fallback) {
   return fallback || "Something went wrong. Please try again.";
 }
 
-export function canRequestPasswordReset(email) {
+export function isValidEmail(email) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(email || "").trim());
 }

@@ -9,11 +9,12 @@ import { useBusinessProfile } from "./business/BusinessProfileContext";
 import { ThemeProvider } from "./theme/ThemeProvider";
 
 const LoginPage = lazy(() => import("./pages/LoginPage"));
-const SignupPage = lazy(() => import("./pages/SignupPage"));
 const OnboardingPage = lazy(() => import("./pages/OnboardingPage"));
 const DashboardPage = lazy(() => import("./pages/DashboardPage"));
 const RotaPage = lazy(() => import("./pages/RotaPage"));
 const SettingsPage = lazy(() => import("./pages/SettingsPage"));
+const PrivacyPage = lazy(() => import("./pages/PrivacyPage"));
+const TermsPage = lazy(() => import("./pages/TermsPage"));
 const AppShell = lazy(() => import("./components/AppShell"));
 
 function RouteError({ message }) {
@@ -51,11 +52,32 @@ function ProtectedRoute({ children }) {
   return children;
 }
 
+function AccessDeniedRoute() {
+  const { logout } = useAuth();
+
+  return (
+    <div className="app route-error-screen">
+      <div className="route-error-card">
+        <p className="section-kicker">Access needed</p>
+        <h1>This email is not connected to a ScheduleLoop workspace</h1>
+        <p>
+          Contact ScheduleLoop support if you believe this is a mistake. Signing
+          in with Firebase does not automatically create access to business data.
+        </p>
+        <button type="button" className="route-error-button" onClick={logout}>
+          Sign out
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function ProfileReadyRoute({ children }) {
-  const { loadingProfile, profileError } = useBusinessProfile();
+  const { loadingProfile, profileError, accessDenied } = useBusinessProfile();
   if (loadingProfile) {
     return <RouteFallback message="Loading your business profile..." />;
   }
+  if (accessDenied) return <AccessDeniedRoute />;
   if (profileError) return <RouteError message={profileError} />;
   return children;
 }
@@ -73,7 +95,9 @@ function AppRoutes() {
     <Suspense fallback={<RouteFallback />}>
       <Routes>
         <Route path="/login" element={<LoginPage />} />
-        <Route path="/signup" element={<SignupPage />} />
+        <Route path="/signup" element={<Navigate to="/login" replace />} />
+        <Route path="/privacy" element={<PrivacyPage />} />
+        <Route path="/terms" element={<TermsPage />} />
 
         <Route
           path="/onboarding"

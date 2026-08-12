@@ -255,7 +255,7 @@ function DashboardPage() {
       await saveProfile(patch);
       setDashboardError("");
     } catch (err) {
-      console.error(err);
+      if (import.meta.env.DEV) console.error(err);
       setDashboardError("Your latest change could not be saved.");
     }
   };
@@ -287,7 +287,7 @@ function DashboardPage() {
         setUploadInfo(demandModel);
         setUploadError("");
       } catch (err) {
-        console.error(err);
+        if (import.meta.env.DEV) console.error(err);
         setUploadError(err.message || "Failed to read CSV file.");
         setCsvCurves(null);
       }
@@ -488,7 +488,7 @@ function DashboardPage() {
       await saveProfile({ staffingFeedback: nextFeedback });
       setDashboardError("");
     } catch (err) {
-      console.error(err);
+      if (import.meta.env.DEV) console.error(err);
       setStaffingFeedback(previousFeedback);
       setDashboardError("Your forecast feedback could not be saved.");
     }

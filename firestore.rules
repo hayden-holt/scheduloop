@@ -6,11 +6,94 @@ service cloud.firestore {
       return request.auth != null;
     }
 
-    function isProfileOwner(userId) {
-      return signedIn() && request.auth.uid == userId;
+    function membershipPath() {
+      return /databases/$(database)/documents/memberships/$(request.auth.uid);
     }
 
-    function hasAllowedProfileKeys() {
+    function hasMembershipDoc() {
+      return signedIn() && exists(membershipPath());
+    }
+
+    function membership() {
+      return get(membershipPath()).data;
+    }
+
+    function hasActiveMembership(businessId) {
+      return hasMembershipDoc()
+        && membership().businessId == businessId
+        && membership().status == 'active';
+    }
+
+    function hasReadRole(role) {
+      return role in ['owner', 'admin', 'manager', 'employee'];
+    }
+
+    function hasWriteRole(role) {
+      return role in ['owner', 'admin', 'manager'];
+    }
+
+    function hasAdminRole(role) {
+      return role in ['owner', 'admin'];
+    }
+
+    function isSelfBusinessId(businessId) {
+      return signedIn() && businessId == request.auth.uid;
+    }
+
+    function isLegacyOwnerBusiness(businessId) {
+      return isSelfBusinessId(businessId)
+        && !hasMembershipDoc()
+        && get(/databases/$(database)/documents/businessProfiles/$(businessId)).data.ownerUid == request.auth.uid;
+    }
+
+    function canReadBusiness(businessId) {
+      return (hasActiveMembership(businessId) && hasReadRole(membership().role))
+        || (!hasMembershipDoc() && isSelfBusinessId(businessId));
+    }
+
+    function canWriteBusiness(businessId) {
+      return (hasActiveMembership(businessId) && hasWriteRole(membership().role))
+        || isLegacyOwnerBusiness(businessId);
+    }
+
+    function canAdminBusiness(businessId) {
+      return hasActiveMembership(businessId) && hasAdminRole(membership().role);
+    }
+
+    function isStringField(field, maxLength) {
+      return !(field in request.resource.data)
+        || (request.resource.data[field] is string
+          && request.resource.data[field].size() <= maxLength);
+    }
+
+    function isOptionalMap(field) {
+      return !(field in request.resource.data)
+        || request.resource.data[field] is map;
+    }
+
+    function isOptionalList(field, maxLength) {
+      return !(field in request.resource.data)
+        || (request.resource.data[field] is list
+          && request.resource.data[field].size() <= maxLength);
+    }
+
+    function isOptionalNumber(field, minValue, maxValue) {
+      return !(field in request.resource.data)
+        || request.resource.data[field] == null
+        || ((request.resource.data[field] is int || request.resource.data[field] is float)
+          && request.resource.data[field] >= minValue
+          && request.resource.data[field] <= maxValue);
+    }
+
+    function resourceBusinessIdMatches(businessId) {
+      return !('businessId' in resource.data) || resource.data.businessId == businessId;
+    }
+
+    function requestBusinessIdMatches(businessId) {
+      return request.resource.data.businessId == businessId;
+    }
+
+    function profileKeysAllowed() {
       return request.resource.data.keys().hasOnly([
         'businessType',
         'businessName',
@@ -27,46 +110,61 @@ service cloud.firestore {
         'dayConfigs',
         'operatingRules',
         'staffingFeedback',
+        'businessId',
         'ownerUid',
+        'updatedBy',
+        'createdAt',
         'updatedAt'
       ]);
     }
 
-    function changesAllowedProfileKeysOnly() {
-      return request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-        'businessType',
-        'businessName',
-        'businessSubtype',
-        'location',
-        'customerPattern',
-        'businessRhythm',
-        'demandEstimates',
-        'roles',
-        'hours',
-        'busyLevel',
-        'peakStaff',
-        'csvDemand',
-        'dayConfigs',
-        'operatingRules',
-        'staffingFeedback',
-        'ownerUid',
-        'updatedAt'
-      ]);
+    function profilePayloadValid(businessId) {
+      return profileKeysAllowed()
+        && requestBusinessIdMatches(businessId)
+        && request.resource.data.updatedBy == request.auth.uid
+        && isStringField('businessType', 40)
+        && isStringField('businessName', 120)
+        && isStringField('businessSubtype', 80)
+        && isStringField('location', 120)
+        && isStringField('customerPattern', 40)
+        && isStringField('businessRhythm', 40)
+        && isStringField('busyLevel', 40)
+        && isOptionalMap('demandEstimates')
+        && isOptionalList('roles', 60)
+        && isOptionalMap('hours')
+        && isOptionalMap('peakStaff')
+        && isOptionalMap('csvDemand')
+        && isOptionalMap('dayConfigs')
+        && isOptionalMap('operatingRules')
+        && isOptionalList('staffingFeedback', 500)
+        && (!('ownerUid' in request.resource.data) || request.resource.data.ownerUid is string);
     }
 
-    function hasAllowedEmployeeKeys() {
+    function employeeKeysAllowed() {
       return request.resource.data.keys().hasOnly([
         'displayName',
         'defaultRole',
         'hourlyRate',
         'active',
+        'businessId',
         'ownerUid',
         'createdAt',
         'updatedAt'
       ]);
     }
 
-    function hasAllowedShiftKeys() {
+    function employeePayloadValid(businessId) {
+      return employeeKeysAllowed()
+        && requestBusinessIdMatches(businessId)
+        && request.resource.data.displayName is string
+        && request.resource.data.displayName.size() > 0
+        && request.resource.data.displayName.size() <= 120
+        && isStringField('defaultRole', 80)
+        && (!('active' in request.resource.data) || request.resource.data.active is bool)
+        && isOptionalNumber('hourlyRate', 0, 1000);
+    }
+
+    function shiftKeysAllowed() {
       return request.resource.data.keys().hasOnly([
         'employeeId',
         'date',
@@ -75,69 +173,99 @@ service cloud.firestore {
         'roleId',
         'breakMinutes',
         'weekStart',
+        'businessId',
         'ownerUid',
         'createdAt',
         'updatedAt'
       ]);
     }
 
-    function hasAllowedRotaWeekKeys() {
+    function shiftPayloadValid(businessId) {
+      return shiftKeysAllowed()
+        && requestBusinessIdMatches(businessId)
+        && request.resource.data.employeeId is string
+        && request.resource.data.employeeId.size() > 0
+        && request.resource.data.employeeId.size() <= 128
+        && request.resource.data.date is string
+        && request.resource.data.date.matches('^\\d{4}-\\d{2}-\\d{2}$')
+        && request.resource.data.startTime is string
+        && request.resource.data.startTime.matches('^\\d{2}:\\d{2}$')
+        && request.resource.data.endTime is string
+        && request.resource.data.endTime.matches('^\\d{2}:\\d{2}$')
+        && request.resource.data.roleId is string
+        && request.resource.data.roleId.size() <= 128
+        && request.resource.data.weekStart is string
+        && request.resource.data.weekStart.matches('^\\d{4}-\\d{2}-\\d{2}$')
+        && isOptionalNumber('breakMinutes', 0, 720);
+    }
+
+    function rotaWeekKeysAllowed() {
       return request.resource.data.keys().hasOnly([
         'weekStart',
         'status',
+        'businessId',
         'ownerUid',
-        'publishedAt',
         'createdAt',
-        'updatedAt'
+        'updatedAt',
+        'publishedAt'
       ]);
     }
 
-    match /businessProfiles/{userId} {
-      allow read: if isProfileOwner(userId);
-      allow create: if isProfileOwner(userId)
-        && request.resource.data.ownerUid == request.auth.uid
-        && hasAllowedProfileKeys();
-      allow update: if isProfileOwner(userId)
-        && (!('ownerUid' in resource.data) || resource.data.ownerUid == request.auth.uid)
-        && request.resource.data.ownerUid == request.auth.uid
-        && changesAllowedProfileKeysOnly();
+    function rotaWeekPayloadValid(businessId) {
+      return rotaWeekKeysAllowed()
+        && requestBusinessIdMatches(businessId)
+        && request.resource.data.weekStart is string
+        && request.resource.data.weekStart.matches('^\\d{4}-\\d{2}-\\d{2}$')
+        && request.resource.data.status in ['draft', 'published'];
+    }
+
+    match /memberships/{userId} {
+      allow read: if signedIn() && request.auth.uid == userId;
+      allow create, update, delete: if false;
+    }
+
+    match /businessProfiles/{businessId} {
+      allow read: if canReadBusiness(businessId);
+      allow create: if canWriteBusiness(businessId)
+        && profilePayloadValid(businessId);
+      allow update: if canWriteBusiness(businessId)
+        && resourceBusinessIdMatches(businessId)
+        && profilePayloadValid(businessId);
       allow delete: if false;
 
       match /employees/{employeeId} {
-        allow read: if isProfileOwner(userId);
-        allow create: if isProfileOwner(userId)
-          && request.resource.data.ownerUid == request.auth.uid
-          && hasAllowedEmployeeKeys();
-        allow update: if isProfileOwner(userId)
-          && resource.data.ownerUid == request.auth.uid
-          && request.resource.data.ownerUid == request.auth.uid
-          && hasAllowedEmployeeKeys();
+        allow read: if canReadBusiness(businessId);
+        allow create: if canWriteBusiness(businessId)
+          && employeePayloadValid(businessId);
+        allow update: if canWriteBusiness(businessId)
+          && resourceBusinessIdMatches(businessId)
+          && employeePayloadValid(businessId);
         allow delete: if false;
       }
 
       match /shifts/{shiftId} {
-        allow read: if isProfileOwner(userId);
-        allow create: if isProfileOwner(userId)
-          && request.resource.data.ownerUid == request.auth.uid
-          && hasAllowedShiftKeys();
-        allow update: if isProfileOwner(userId)
-          && resource.data.ownerUid == request.auth.uid
-          && request.resource.data.ownerUid == request.auth.uid
-          && hasAllowedShiftKeys();
-        allow delete: if isProfileOwner(userId)
-          && resource.data.ownerUid == request.auth.uid;
+        allow read: if canReadBusiness(businessId);
+        allow create: if canWriteBusiness(businessId)
+          && shiftPayloadValid(businessId);
+        allow update: if canWriteBusiness(businessId)
+          && resourceBusinessIdMatches(businessId)
+          && shiftPayloadValid(businessId);
+        allow delete: if canWriteBusiness(businessId)
+          && resourceBusinessIdMatches(businessId);
       }
 
       match /rotaWeeks/{weekStart} {
-        allow read: if isProfileOwner(userId);
-        allow create: if isProfileOwner(userId)
-          && request.resource.data.ownerUid == request.auth.uid
-          && hasAllowedRotaWeekKeys();
-        allow update: if isProfileOwner(userId)
-          && resource.data.ownerUid == request.auth.uid
-          && request.resource.data.ownerUid == request.auth.uid
-          && hasAllowedRotaWeekKeys();
+        allow read: if canReadBusiness(businessId);
+        allow create: if canWriteBusiness(businessId)
+          && rotaWeekPayloadValid(businessId);
+        allow update: if canWriteBusiness(businessId)
+          && resourceBusinessIdMatches(businessId)
+          && rotaWeekPayloadValid(businessId);
         allow delete: if false;
+      }
+
+      match /{document=**} {
+        allow read, write: if false;
       }
     }
 

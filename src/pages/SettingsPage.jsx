@@ -5,10 +5,6 @@ import { useAuth } from "../auth/AuthContext";
 import { useBusinessProfile } from "../business/BusinessProfileContext";
 import { HOURS, isOpeningHoursValid } from "../utils/schedule";
 import {
-  canRequestPasswordReset,
-  getFriendlyAuthErrorMessage,
-} from "../utils/authErrors";
-import {
   BUSINESS_RHYTHM_OPTIONS,
   CUSTOMER_PATTERN_OPTIONS,
   getBusinessRhythmForCustomerPattern,
@@ -60,27 +56,14 @@ function SettingsStatus({ message }) {
 }
 
 function SettingsPage() {
-  const {
-    user,
-    resetPassword,
-    updateUserEmail,
-    updateUserPassword,
-  } = useAuth();
-  const { profile, saveProfile } = useBusinessProfile();
+  const { user } = useAuth();
+  const { profile, saveProfile, membership, businessId } = useBusinessProfile();
   const initialBasics = normalizeBusinessProfileBasics(profile || {});
   const initialHours = normalizeOpeningHours(profile?.hours);
   const initialDemandEstimates = normalizeDemandEstimates(
     profile?.demandEstimates,
     initialBasics.businessType
   );
-
-  const [email, setEmail] = useState(user?.email || "");
-  const [newPassword, setNewPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
-  const [accountMessage, setAccountMessage] = useState({ type: "", text: "" });
-  const [isSavingEmail, setIsSavingEmail] = useState(false);
-  const [isSavingPassword, setIsSavingPassword] = useState(false);
-  const [isSendingReset, setIsSendingReset] = useState(false);
 
   const [businessName, setBusinessName] = useState(initialBasics.businessName);
   const [businessType, setBusinessType] = useState(initialBasics.businessType);
@@ -101,10 +84,6 @@ function SettingsPage() {
   );
   const [profileMessage, setProfileMessage] = useState({ type: "", text: "" });
   const [isSavingProfile, setIsSavingProfile] = useState(false);
-
-  useEffect(() => {
-    setEmail(user?.email || "");
-  }, [user?.email]);
 
   useEffect(() => {
     const basics = normalizeBusinessProfileBasics(profile || {});
@@ -167,124 +146,6 @@ function SettingsPage() {
     }));
   };
 
-  const handleEmailSave = async (event) => {
-    event.preventDefault();
-    setAccountMessage({ type: "", text: "" });
-
-    const trimmedEmail = email.trim();
-    if (!canRequestPasswordReset(trimmedEmail)) {
-      setAccountMessage({
-        type: "error",
-        text: "Enter a valid email address.",
-      });
-      return;
-    }
-
-    if (trimmedEmail === user?.email) {
-      setAccountMessage({
-        type: "success",
-        text: "This is already your sign-in email.",
-      });
-      return;
-    }
-
-    setIsSavingEmail(true);
-    try {
-      await updateUserEmail(trimmedEmail);
-      setAccountMessage({
-        type: "success",
-        text: "Your sign-in email has been updated.",
-      });
-    } catch (error) {
-      console.error(error);
-      setAccountMessage({
-        type: "error",
-        text: getFriendlyAuthErrorMessage(
-          error,
-          "We could not update your email. Please try again."
-        ),
-      });
-    } finally {
-      setIsSavingEmail(false);
-    }
-  };
-
-  const handlePasswordSave = async (event) => {
-    event.preventDefault();
-    setAccountMessage({ type: "", text: "" });
-
-    if (newPassword.length < 8) {
-      setAccountMessage({
-        type: "error",
-        text: "Use a stronger password with at least 8 characters.",
-      });
-      return;
-    }
-
-    if (newPassword !== confirmPassword) {
-      setAccountMessage({
-        type: "error",
-        text: "The password fields do not match.",
-      });
-      return;
-    }
-
-    setIsSavingPassword(true);
-    try {
-      await updateUserPassword(newPassword);
-      setNewPassword("");
-      setConfirmPassword("");
-      setAccountMessage({
-        type: "success",
-        text: "Your password has been updated.",
-      });
-    } catch (error) {
-      console.error(error);
-      setAccountMessage({
-        type: "error",
-        text: getFriendlyAuthErrorMessage(
-          error,
-          "We could not update your password. Please try again."
-        ),
-      });
-    } finally {
-      setIsSavingPassword(false);
-    }
-  };
-
-  const handleResetLink = async () => {
-    setAccountMessage({ type: "", text: "" });
-
-    const resetEmail = user?.email || email.trim();
-    if (!canRequestPasswordReset(resetEmail)) {
-      setAccountMessage({
-        type: "error",
-        text: "Add a valid sign-in email before sending a reset link.",
-      });
-      return;
-    }
-
-    setIsSendingReset(true);
-    try {
-      await resetPassword(resetEmail);
-      setAccountMessage({
-        type: "success",
-        text: "A password reset link has been sent to your sign-in email.",
-      });
-    } catch (error) {
-      console.error(error);
-      setAccountMessage({
-        type: "error",
-        text: getFriendlyAuthErrorMessage(
-          error,
-          "We could not send a reset link. Please try again."
-        ),
-      });
-    } finally {
-      setIsSendingReset(false);
-    }
-  };
-
   const handleProfileSave = async (event) => {
     event.preventDefault();
     setProfileMessage({ type: "", text: "" });
@@ -329,7 +190,7 @@ function SettingsPage() {
         text: "Settings saved. Your dashboard will use this profile.",
       });
     } catch (error) {
-      console.error(error);
+      if (import.meta.env.DEV) console.error(error);
       setProfileMessage({
         type: "error",
         text: getProfileSaveErrorMessage(error),
@@ -363,92 +224,39 @@ function SettingsPage() {
       <div className="settings-layout">
         <div className="settings-column">
           <InfoCard
-            title="Account"
-            subtitle="Manage the email and password used to sign in."
+            title="Account access"
+            subtitle="ScheduleLoop uses Firebase email-link sign-in and manual workspace membership."
             className="settings-card"
           >
-            <form className="settings-form" onSubmit={handleEmailSave}>
-              <label className="settings-field" htmlFor="settings-email">
-                Sign-in email
-                <span>Use an address the account owner can access.</span>
-              </label>
-              <div className="settings-action-row">
-                <input
-                  id="settings-email"
-                  className="settings-input"
-                  type="email"
-                  value={email}
-                  onChange={(event) => setEmail(event.target.value)}
-                  autoComplete="email"
-                />
-                <button
-                  type="submit"
-                  className="secondary-button"
-                  disabled={isSavingEmail}
-                >
-                  {isSavingEmail ? "Saving..." : "Update email"}
-                </button>
+            <dl className="settings-definition-list">
+              <div>
+                <dt>Signed-in email</dt>
+                <dd>{user?.email || "Unknown"}</dd>
               </div>
-            </form>
-
-            <form className="settings-form" onSubmit={handlePasswordSave}>
-              <div className="settings-field-grid two">
-                <label className="settings-field" htmlFor="settings-password">
-                  New password
-                  <span>Use at least 8 characters.</span>
-                  <input
-                    id="settings-password"
-                    className="settings-input"
-                    type="password"
-                    value={newPassword}
-                    onChange={(event) => setNewPassword(event.target.value)}
-                    autoComplete="new-password"
-                  />
-                </label>
-
-                <label
-                  className="settings-field"
-                  htmlFor="settings-password-confirm"
-                >
-                  Confirm password
-                  <span>Re-enter it to avoid mistakes.</span>
-                  <input
-                    id="settings-password-confirm"
-                    className="settings-input"
-                    type="password"
-                    value={confirmPassword}
-                    onChange={(event) =>
-                      setConfirmPassword(event.target.value)
-                    }
-                    autoComplete="new-password"
-                  />
-                </label>
+              <div>
+                <dt>Workspace role</dt>
+                <dd>{membership?.legacy ? "owner (legacy)" : membership?.role || "manager"}</dd>
               </div>
-
-              <div className="settings-button-row">
-                <button
-                  type="submit"
-                  className="primary-action-button"
-                  disabled={isSavingPassword}
-                >
-                  {isSavingPassword ? "Updating..." : "Update password"}
-                </button>
-                <button
-                  type="button"
-                  className="secondary-button"
-                  onClick={handleResetLink}
-                  disabled={isSendingReset}
-                >
-                  {isSendingReset ? "Sending..." : "Send reset link"}
-                </button>
+              <div>
+                <dt>Workspace ID</dt>
+                <dd>{businessId || "Not available"}</dd>
               </div>
-            </form>
-
-            <SettingsStatus message={accountMessage} />
+            </dl>
             <p className="settings-muted-note">
-              Firebase may ask you to log in again before sensitive account
-              changes. That protects the business account from stale sessions.
+              Passwords are no longer used in the app. To change the email or
+              remove access, contact ScheduleLoop support so the Firebase user
+              and workspace membership can be updated together.
             </p>
+            <div className="settings-link-list compact">
+              <Link to="/privacy">
+                <strong>Privacy notice</strong>
+                <span>How ScheduleLoop handles account and business data.</span>
+              </Link>
+              <Link to="/terms">
+                <strong>Terms</strong>
+                <span>The draft application terms for business users.</span>
+              </Link>
+            </div>
           </InfoCard>
 
           <InfoCard
@@ -817,9 +625,9 @@ function SettingsPage() {
             className="settings-card"
           >
             <ul className="settings-check-list">
-              <li>Business settings are saved under your user ID.</li>
+              <li>Business settings are saved under the workspace ID.</li>
               <li>CSV uploads and rota data stay in their existing areas.</li>
-              <li>Changing account email or password may require a fresh login.</li>
+              <li>Email or membership changes must be handled through support.</li>
             </ul>
           </InfoCard>
         </aside>
