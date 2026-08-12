@@ -13,6 +13,7 @@ const OnboardingPage = lazy(() => import("./pages/OnboardingPage"));
 const DashboardPage = lazy(() => import("./pages/DashboardPage"));
 const RotaPage = lazy(() => import("./pages/RotaPage"));
 const SettingsPage = lazy(() => import("./pages/SettingsPage"));
+const DataSourcesPage = lazy(() => import("./pages/DataSourcesPage"));
 const PrivacyPage = lazy(() => import("./pages/PrivacyPage"));
 const TermsPage = lazy(() => import("./pages/TermsPage"));
 const AppShell = lazy(() => import("./components/AppShell"));
@@ -133,6 +134,21 @@ function AppRoutes() {
                 <CompleteProfileRoute>
                   <AppShell>
                     <RotaPage />
+                  </AppShell>
+                </CompleteProfileRoute>
+              </ProfileReadyRoute>
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/data-sources"
+          element={
+            <ProtectedRoute>
+              <ProfileReadyRoute>
+                <CompleteProfileRoute>
+                  <AppShell>
+                    <DataSourcesPage />
                   </AppShell>
                 </CompleteProfileRoute>
               </ProfileReadyRoute>

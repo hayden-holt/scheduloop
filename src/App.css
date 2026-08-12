@@ -5024,6 +5024,105 @@ html, body, #root {
   margin-top: 7px;
 }
 
+.data-sources-page {
+  display: grid;
+  gap: 18px;
+}
+
+.data-sources-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(280px, 0.9fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.data-sources-grid .settings-card:first-child {
+  grid-row: span 2;
+}
+
+.data-source-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  min-width: 0;
+  padding: 13px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+  background: var(--bg-elevated);
+}
+
+.data-source-row.muted {
+  opacity: 0.82;
+}
+
+.data-source-row h3 {
+  margin: 0;
+  color: var(--text-main);
+  font-size: 16px;
+}
+
+.data-source-row p {
+  margin: 5px 0 0;
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.data-source-pill {
+  flex: 0 0 auto;
+  padding: 7px 10px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.data-source-pill.success {
+  background: rgba(22, 101, 52, 0.18);
+  color: #16a34a;
+}
+
+.data-source-pill.warning {
+  background: rgba(245, 158, 11, 0.16);
+  color: #d97706;
+}
+
+.data-source-meta {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin: 14px 0;
+}
+
+.data-source-meta div {
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+  background: rgba(79, 140, 255, 0.07);
+}
+
+.data-source-meta dt {
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.data-source-meta dd {
+  margin: 4px 0 0;
+  color: var(--text-main);
+  font-size: 13px;
+  font-weight: 800;
+  overflow-wrap: anywhere;
+}
+
+.data-source-provider-list {
+  display: grid;
+  gap: 10px;
+}
+
 .rota-page {
   display: grid;
   gap: 18px;
@@ -5789,6 +5888,7 @@ html, body, #root {
   }
 
   .settings-layout,
+  .data-sources-grid,
   .settings-hero {
     grid-template-columns: 1fr;
   }
@@ -5840,8 +5940,18 @@ html, body, #root {
   .rota-form-grid,
   .settings-field-grid.two,
   .settings-field-grid.three,
+  .data-source-meta,
   .settings-action-row {
     grid-template-columns: 1fr;
+  }
+
+  .data-source-row {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .data-source-pill {
+    width: fit-content;
   }
 
   .settings-button-row {

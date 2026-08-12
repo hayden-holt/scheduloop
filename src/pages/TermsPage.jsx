@@ -42,6 +42,18 @@ function TermsPage() {
         </section>
 
         <section>
+          <h2>Third-party POS connections</h2>
+          <p>
+            Authorised managers may connect supported third-party POS providers
+            such as Square so ScheduleLoop can receive operational sales
+            activity for demand analysis and workforce planning. The customer is
+            responsible for having authority to connect the POS account and can
+            disconnect it from ScheduleLoop. Third-party platform availability,
+            permissions and API changes may affect syncing.
+          </p>
+        </section>
+
+        <section>
           <h2>Acceptable use</h2>
           <p>
             Users must not attempt to access another workspace, bypass security,

@@ -88,6 +88,33 @@ import {
   normalizeDemandEstimates,
   normalizeOpeningHours,
 } from "../src/utils/businessProfileSetup.js";
+import {
+  canManageLegacyBusinessProfile,
+  canManagePosIntegration,
+} from "../functions/src/pos/authz.js";
+import {
+  createOAuthStateRecord,
+  isOAuthStateRecordValid,
+} from "../functions/src/pos/oauthState.js";
+import {
+  createSquareWebhookSignature,
+  verifySquareWebhookSignature,
+} from "../functions/src/pos/webhooks.js";
+import { normalizeSquarePaymentToTransaction } from "../functions/src/pos/normaliseSquare.js";
+import {
+  buildIngestionDelta,
+  calculateActualDemandSoFar,
+  createPosDemandModelFromBuckets,
+  getDemandBucketKey,
+} from "../functions/src/pos/demandAggregation.js";
+import {
+  collectSquarePayments,
+  createBackfillWindow,
+} from "../functions/src/pos/squareClient.js";
+import {
+  FORECAST_DEMAND_SOURCES,
+  getForecastDemandModel,
+} from "../src/integrations/pos/demandSources.js";
 
 const tests = [];
 
@@ -1489,6 +1516,278 @@ test("auth helpers return friendly messages and validate email links", () => {
   );
 });
 
+test("POS integration management is tenant and role scoped", () => {
+  assert.equal(
+    canManagePosIntegration(
+      { businessId: "biz-a", status: "active", role: "manager" },
+      "biz-a"
+    ),
+    true
+  );
+  assert.equal(
+    canManagePosIntegration(
+      { businessId: "biz-a", status: "active", role: "manager" },
+      "biz-b"
+    ),
+    false
+  );
+  assert.equal(
+    canManagePosIntegration(
+      { businessId: "biz-a", status: "active", role: "employee" },
+      "biz-a"
+    ),
+    false
+  );
+  assert.equal(
+    canManageLegacyBusinessProfile({
+      uid: "legacy-owner",
+      businessId: "legacy-owner",
+      profile: { ownerUid: "legacy-owner" },
+    }),
+    true
+  );
+});
+
+test("Square OAuth state validates owner, expiry and one-time use", () => {
+  const now = new Date("2026-01-01T09:00:00Z");
+  const { state, stateHash, record } = createOAuthStateRecord({
+    uid: "user-1",
+    businessId: "biz-1",
+    now,
+  });
+
+  assert.equal(state.length > 20, true);
+  assert.match(stateHash, /^[a-f0-9]{64}$/);
+  assert.equal(
+    isOAuthStateRecordValid(record, {
+      uid: "user-1",
+      now: new Date("2026-01-01T09:05:00Z"),
+    }),
+    true
+  );
+  assert.equal(
+    isOAuthStateRecordValid(
+      {
+        ...record,
+        expiresAt: {
+          toDate: () => new Date("2026-01-01T09:10:00Z"),
+        },
+      },
+      {
+        uid: "user-1",
+        now: new Date("2026-01-01T09:05:00Z"),
+      }
+    ),
+    true
+  );
+  assert.equal(
+    isOAuthStateRecordValid(record, {
+      uid: "other-user",
+      now: new Date("2026-01-01T09:05:00Z"),
+    }),
+    false
+  );
+  assert.equal(
+    isOAuthStateRecordValid(record, {
+      uid: "user-1",
+      now: new Date("2026-01-01T09:11:00Z"),
+    }),
+    false
+  );
+  assert.equal(
+    isOAuthStateRecordValid(
+      { ...record, consumedAt: now.toISOString() },
+      {
+        uid: "user-1",
+        now,
+      }
+    ),
+    false
+  );
+});
+
+test("Square webhook signatures reject tampered payloads", () => {
+  const notificationUrl = "https://example.com/squareWebhook";
+  const rawBody = Buffer.from(JSON.stringify({ merchant_id: "merchant-1" }));
+  const signatureKey = "sandbox-signature-key";
+  const signatureHeader = createSquareWebhookSignature({
+    notificationUrl,
+    rawBody,
+    signatureKey,
+  });
+
+  assert.equal(
+    verifySquareWebhookSignature({
+      notificationUrl,
+      rawBody,
+      signatureKey,
+      signatureHeader,
+    }),
+    true
+  );
+  assert.equal(
+    verifySquareWebhookSignature({
+      notificationUrl,
+      rawBody: Buffer.from(JSON.stringify({ merchant_id: "merchant-2" })),
+      signatureKey,
+      signatureHeader,
+    }),
+    false
+  );
+});
+
+test("Square payments normalise to minimal ScheduleLoop transactions", () => {
+  const transaction = normalizeSquarePaymentToTransaction({
+    businessId: "biz-1",
+    scheduleLoopLocationId: "front-counter",
+    squareMerchantId: "merchant-1",
+    payment: {
+      id: "pay-1",
+      order_id: "order-1",
+      merchant_id: "merchant-1",
+      location_id: "loc-1",
+      status: "COMPLETED",
+      created_at: "2026-01-02T09:15:00Z",
+      updated_at: "2026-01-02T09:16:00Z",
+      total_money: { amount: 1250, currency: "GBP" },
+      refunded_money: { amount: 250, currency: "GBP" },
+      customer_id: "not-copied",
+    },
+  });
+
+  assert.equal(transaction.businessId, "biz-1");
+  assert.equal(transaction.source, "square");
+  assert.equal(transaction.externalTransactionId, "pay-1");
+  assert.equal(transaction.locationId, "front-counter");
+  assert.equal(transaction.transactionCount, 1);
+  assert.equal(transaction.revenue, 10);
+  assert.equal("customer_id" in transaction, false);
+});
+
+test("POS demand buckets aggregate into the existing forecast model shape", () => {
+  const bucket = getDemandBucketKey({
+    timestamp: "2026-01-02T09:45:00",
+    openingHours: { open: "09:00", close: "10:00" },
+    intervalMinutes: 30,
+  });
+  const model = createPosDemandModelFromBuckets({
+    openingHours: { open: "09:00", close: "10:00" },
+    intervalMinutes: 30,
+    now: () => new Date("2026-01-03T12:00:00Z"),
+    buckets: [
+      {
+        source: "square",
+        dateKey: "2026-01-02",
+        weekday: 5,
+        slotLabel: "09:00",
+        transactionCount: 2,
+      },
+      {
+        source: "square",
+        dateKey: "2026-01-02",
+        weekday: 5,
+        slotLabel: "09:30",
+        transactionCount: 4,
+      },
+    ],
+  });
+
+  assert.equal(bucket.slotLabel, "09:30");
+  assert.equal(model.modelVersion, CSV_DEMAND_MODEL_VERSION);
+  assert.deepEqual(model.slotLabels, ["09:00", "09:30"]);
+  assert.deepEqual(model.fallbackUnits, [2, 4]);
+  assert.deepEqual(model.byWeekdayUnits[5], [2, 4]);
+  assert.equal(model.demandMetric.column, "Square transactions");
+  assert.equal(hasUnsupportedNestedArray(model), false);
+});
+
+test("POS ingestion deltas reconcile updates and cancellations", () => {
+  assert.deepEqual(
+    buildIngestionDelta(
+      { transactionCount: 1, revenue: 12.5, itemCount: 0 },
+      { transactionCount: 1, revenue: 10, itemCount: 0 }
+    ),
+    { transactionCount: 0, revenue: -2.5, itemCount: 0 }
+  );
+  assert.deepEqual(
+    buildIngestionDelta(
+      { transactionCount: 1, revenue: 12.5, itemCount: 0 },
+      null
+    ),
+    { transactionCount: -1, revenue: -12.5, itemCount: 0 }
+  );
+});
+
+test("Square backfill paginates and clamps historical range", async () => {
+  const calls = [];
+  const result = await collectSquarePayments({
+    beginTime: "2026-01-01T00:00:00Z",
+    endTime: "2026-01-02T00:00:00Z",
+    locationId: "loc-1",
+    fetchPage: async ({ cursor }) => {
+      calls.push(cursor || "first");
+      return cursor
+        ? { payments: [{ id: "pay-2" }] }
+        : { payments: [{ id: "pay-1" }], cursor: "next-page" };
+    },
+  });
+  const window = createBackfillWindow({
+    days: 999,
+    now: new Date("2026-01-31T00:00:00Z"),
+  });
+
+  assert.deepEqual(calls, ["first", "next-page"]);
+  assert.deepEqual(result.payments.map((payment) => payment.id), [
+    "pay-1",
+    "pay-2",
+  ]);
+  assert.equal(window.days, 90);
+});
+
+test("live actuals compare POS buckets with forecast units without changing rota", () => {
+  const actuals = calculateActualDemandSoFar({
+    dateKey: "2026-01-02",
+    upToTime: "09:30",
+    forecastPoints: [
+      { hour: "09:00", demandUnits: 10 },
+      { hour: "09:30", demandUnits: 10 },
+    ],
+    buckets: [
+      { dateKey: "2026-01-02", slotLabel: "09:00", transactionCount: 12 },
+      { dateKey: "2026-01-02", slotLabel: "09:30", transactionCount: 18 },
+      { dateKey: "2026-01-02", slotLabel: "10:00", transactionCount: 100 },
+    ],
+  });
+
+  assert.deepEqual(actuals, {
+    actualTransactions: 30,
+    forecastTransactions: 20,
+    variancePercent: 50,
+  });
+});
+
+test("forecast demand source prefers CSV over overlapping Square history", () => {
+  const csvDemand = { modelVersion: CSV_DEMAND_MODEL_VERSION, rows: 10 };
+  const posDemand = {
+    modelVersion: CSV_DEMAND_MODEL_VERSION,
+    rows: 30,
+    source: "square",
+  };
+
+  assert.equal(
+    getForecastDemandModel({ csvDemand, posDemand }).source,
+    FORECAST_DEMAND_SOURCES.CSV
+  );
+  assert.equal(
+    getForecastDemandModel({ posDemand }).source,
+    FORECAST_DEMAND_SOURCES.SQUARE
+  );
+  assert.equal(
+    getForecastDemandModel({}).source,
+    FORECAST_DEMAND_SOURCES.PRESET
+  );
+});
+
 test("Firestore rules keep business data membership-gated", () => {
   const rules = fs.readFileSync(
     new URL("../firestore.rules", import.meta.url),
@@ -1504,6 +1803,22 @@ test("Firestore rules keep business data membership-gated", () => {
     rules,
     /allow\s+read,\s*write:\s*if\s+request\.auth\s*!=\s*null/
   );
+});
+
+test("Firestore rules deny client-side POS transaction injection", () => {
+  const rules = fs.readFileSync(
+    new URL("../firestore.rules", import.meta.url),
+    "utf8"
+  );
+
+  assert.match(rules, /match \/posConnections\/\{provider\}/);
+  assert.match(rules, /match \/demandBuckets\/\{bucketId\}/);
+  assert.match(rules, /match \/posTransactions\/\{transactionId\}/);
+  assert.match(rules, /match \/posSecrets\/\{secretId\}/);
+  assert.match(rules, /match \/posWebhookEvents\/\{eventId\}/);
+  assert.match(rules, /allow create, update, delete: if false;/);
+  assert.match(rules, /allow read, write: if false;/);
+  assert.doesNotMatch(rules, /posTransactions[\s\S]*allow create: if signedIn/);
 });
 
 let failed = 0;

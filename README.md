@@ -20,6 +20,7 @@ Scheduloop currently includes:
 - A dashboard showing expected staffing need across the day.
 - Role-level staffing lines for areas such as front of house and kitchen.
 - CSV upload for historical demand data.
+- Square POS data source support through Firebase Functions, with CSV still available as the fallback.
 - Basic backtesting against uploaded staff counts.
 - Calendar settings for normal, quiet, busy, and event-style days.
 - Labour-cost estimates based on average or role-level hourly wages.
@@ -84,6 +85,7 @@ VITE_FIREBASE_MESSAGING_SENDER_ID=
 VITE_FIREBASE_APP_ID=
 VITE_FIREBASE_MEASUREMENT_ID=
 VITE_FIREBASE_APPCHECK_RECAPTCHA_SITE_KEY=
+VITE_ENABLE_SQUARE_INTEGRATION=false
 ```
 
 Required at runtime:
@@ -96,6 +98,19 @@ Required at runtime:
 The remaining values should still match the Firebase web app config when available. Keep production business data out of local sample files and browser localStorage.
 
 `VITE_FIREBASE_APPCHECK_RECAPTCHA_SITE_KEY` is used only when Firebase App Check is configured. Add the reCAPTCHA Enterprise site key for the web app, monitor App Check metrics, then enable enforcement in the Firebase Console when production traffic is confirmed healthy.
+
+`VITE_ENABLE_SQUARE_INTEGRATION` only controls the visible Square UI. The server-side Square integration also requires Firebase Functions secrets/configuration; see `docs/integrations/SQUARE_SETUP.md`.
+
+## POS Integrations
+
+Square POS is supported behind feature flags and Firebase Functions. Square OAuth, webhook ingestion, recent historical sync, token storage and disconnect all run server-side. The browser only reads safe connection metadata and calls authorised Functions.
+
+CSV remains fully supported. If valid CSV demand history exists, ScheduleLoop keeps using it as the active forecast source and keeps Square demand separately to avoid silently double-counting overlapping history.
+
+Setup and architecture docs:
+
+- `docs/integrations/SQUARE_SETUP.md`
+- `docs/integrations/POS_ARCHITECTURE.md`
 
 ## Available Scripts
 

@@ -11,6 +11,7 @@ Status: draft for owner/legal review.
 - Employee records used for rota planning, currently names, default role, hourly rate and active status.
 - Shifts, rota week status, copied-week analysis and printable rota summaries.
 - CSV-uploaded historical demand or trading data, including optional staff-count history.
+- POS operational transaction summaries from connected providers such as Square: timestamps, location IDs, transaction counts, item counts, sales totals, statuses and external IDs used for deduplication.
 - Forecast feedback, calendar day settings, context tags and backtesting summaries.
 - Technical/security metadata needed by Firebase, Firestore and App Check.
 
@@ -20,6 +21,8 @@ Status: draft for owner/legal review.
 - Cloud Firestore.
 - Firebase App Check with reCAPTCHA Enterprise.
 - Firebase Hosting if used for deployment.
+- Firebase Cloud Functions for Square OAuth, webhooks, historical sync and token handling.
+- Square, when a customer chooses to connect Square POS.
 - TODO: confirm production hosting if not Firebase Hosting.
 - TODO: confirm support, email, monitoring, analytics or backup tools before launch.
 
@@ -39,6 +42,9 @@ Status: draft for owner/legal review.
 - CSV uploads have size, type, row, column, duplicate-header, cell-length and formula-like value checks.
 - App Check is integrated behind an environment variable and must be enforced after monitoring.
 - Security headers are configured for Firebase Hosting.
+- Square tokens are intended to be encrypted and stored in server-only Firestore collections.
+- Firestore rules deny client writes to POS transactions, POS demand buckets and server-only integration collections.
+- Square webhook ingestion verifies signatures before processing events.
 
 ## Deletion and return process to define
 
@@ -46,6 +52,7 @@ Status: draft for owner/legal review.
 - Employee removal: use in-app deactivation for rota continuity; define when permanent deletion is required.
 - Workspace deletion: must be privileged, explicitly confirmed and include profile data plus subcollections.
 - CSV data removal: clear `csvDemand` from the business profile and confirm derived forecasts/backtests are no longer retained.
+- POS disconnect: revoke/delete stored provider credentials where possible and preserve historical ScheduleLoop demand unless the customer explicitly requests deletion through a defined workflow.
 - Export/access requests: define what data can be exported from Firestore and how identity/authority will be verified.
 
 ## Retention placeholders
@@ -54,6 +61,8 @@ Status: draft for owner/legal review.
 - TODO: inactive workspace retention.
 - TODO: employee/rota history retention.
 - TODO: CSV upload/model retention.
+- TODO: raw normalised POS transaction retention after aggregation.
+- TODO: POS demand bucket retention.
 - TODO: support request retention.
 - TODO: backup retention once backups are configured.
 

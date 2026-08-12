@@ -26,7 +26,6 @@ import {
 import {
   getDemandConfidence,
   hasRoleSpecificDemandForRoles,
-  isCurrentCsvDemandModel,
 } from "../utils/demandModel";
 import {
   buildForecastChartData,
@@ -52,6 +51,11 @@ import {
   normaliseDayConfigs,
   normaliseDayContext,
 } from "../utils/dayContext";
+import {
+  FORECAST_DEMAND_SOURCES,
+  getDemandSourceLabel,
+  getForecastDemandModel,
+} from "../integrations/pos/demandSources";
 
 const HOLIDAY_DEFINITIONS = [
   { month: 0, day: 1, label: "New Year's Day" },
@@ -197,10 +201,12 @@ function DashboardPage() {
   const location = useLocation();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const storedCsvDemand = isCurrentCsvDemandModel(profile?.csvDemand)
-    ? profile.csvDemand
-    : null;
-  const hasOutdatedCsvDemand = Boolean(profile?.csvDemand && !storedCsvDemand);
+  const forecastDemand = useMemo(() => getForecastDemandModel(profile), [profile]);
+  const storedCsvDemand = forecastDemand.model;
+  const hasOutdatedCsvDemand = Boolean(
+    profile?.csvDemand &&
+      forecastDemand.source !== FORECAST_DEMAND_SOURCES.CSV
+  );
 
   const [roles, setRoles] = useState(() => getInitialRoles(profile));
   const [operatingRules, setOperatingRules] = useState(() =>
@@ -440,7 +446,7 @@ function DashboardPage() {
     : "Add wage";
   const labourCostDetail = getLabourCostDetail(labourCostEstimate);
   const forecastBasis = hasCsv
-    ? `Uploaded ${csvCurves.rows.toLocaleString()} rows across ${
+    ? `${getDemandSourceLabel(forecastDemand.source)} data with ${csvCurves.rows.toLocaleString()} rows across ${
         csvCurves.observedDays || "several"
       } observed days${
         hasRoleSpecificDemand ? ", including role-specific demand." : "."
@@ -598,7 +604,7 @@ function DashboardPage() {
             />
             <PlannerMetricCard
               label="Forecast based on"
-              value={hasCsv ? "Uploaded data" : "Business profile"}
+              value={hasCsv ? getDemandSourceLabel(forecastDemand.source) : "Business profile"}
               detail={forecastBasis}
               icon="document"
             />

@@ -107,6 +107,8 @@ service cloud.firestore {
         'busyLevel',
         'peakStaff',
         'csvDemand',
+        'posDemand',
+        'posDemandUpdatedAt',
         'dayConfigs',
         'operatingRules',
         'staffingFeedback',
@@ -134,10 +136,25 @@ service cloud.firestore {
         && isOptionalMap('hours')
         && isOptionalMap('peakStaff')
         && isOptionalMap('csvDemand')
+        && isOptionalMap('posDemand')
         && isOptionalMap('dayConfigs')
         && isOptionalMap('operatingRules')
         && isOptionalList('staffingFeedback', 500)
         && (!('ownerUid' in request.resource.data) || request.resource.data.ownerUid is string);
+    }
+
+    function profileServerManagedFieldsAbsent() {
+      return !('posDemand' in request.resource.data)
+        && !('posDemandUpdatedAt' in request.resource.data);
+    }
+
+    function profileServerManagedFieldsUnchanged() {
+      return (!('posDemand' in request.resource.data)
+          || (('posDemand' in resource.data)
+            && request.resource.data.posDemand == resource.data.posDemand))
+        && (!('posDemandUpdatedAt' in request.resource.data)
+          || (('posDemandUpdatedAt' in resource.data)
+            && request.resource.data.posDemandUpdatedAt == resource.data.posDemandUpdatedAt));
     }
 
     function employeeKeysAllowed() {
@@ -227,10 +244,12 @@ service cloud.firestore {
     match /businessProfiles/{businessId} {
       allow read: if canReadBusiness(businessId);
       allow create: if canWriteBusiness(businessId)
-        && profilePayloadValid(businessId);
+        && profilePayloadValid(businessId)
+        && profileServerManagedFieldsAbsent();
       allow update: if canWriteBusiness(businessId)
         && resourceBusinessIdMatches(businessId)
-        && profilePayloadValid(businessId);
+        && profilePayloadValid(businessId)
+        && profileServerManagedFieldsUnchanged();
       allow delete: if false;
 
       match /employees/{employeeId} {
@@ -264,9 +283,40 @@ service cloud.firestore {
         allow delete: if false;
       }
 
+      match /posConnections/{provider} {
+        allow read: if canReadBusiness(businessId);
+        allow create, update, delete: if false;
+      }
+
+      match /demandBuckets/{bucketId} {
+        allow read: if canReadBusiness(businessId);
+        allow create, update, delete: if false;
+      }
+
+      match /posTransactions/{transactionId} {
+        allow read: if canAdminBusiness(businessId);
+        allow create, update, delete: if false;
+      }
+
       match /{document=**} {
         allow read, write: if false;
       }
+    }
+
+    match /posSecrets/{secretId} {
+      allow read, write: if false;
+    }
+
+    match /posMerchantMappings/{mappingId} {
+      allow read, write: if false;
+    }
+
+    match /posWebhookEvents/{eventId} {
+      allow read, write: if false;
+    }
+
+    match /squareOAuthStates/{stateId} {
+      allow read, write: if false;
     }
 
     match /{document=**} {

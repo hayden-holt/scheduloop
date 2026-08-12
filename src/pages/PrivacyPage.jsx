@@ -30,8 +30,14 @@ function PrivacyPage() {
             <li>Business profile details such as name, location, business type, opening hours and operating assumptions.</li>
             <li>Role, staffing, labour-cost, rota, employee name, shift and feedback data entered by managers.</li>
             <li>CSV demand or trading-history data uploaded by the customer business.</li>
+            <li>Operational POS transaction summaries from connected providers such as Square, including timestamps, location, transaction counts, item counts and sales totals used for demand analysis.</li>
             <li>Technical and security data needed to run Firebase, Firestore and App Check.</li>
           </ul>
+          <p>
+            ScheduleLoop does not intentionally collect payment card numbers,
+            card security codes, customer payment credentials, customer contact
+            details or full cardholder names from POS integrations.
+          </p>
         </section>
 
         <section>
@@ -39,8 +45,9 @@ function PrivacyPage() {
           <p>
             ScheduleLoop uses this information to authenticate authorised users,
             protect each workspace, generate staffing guidance, support rota
-            planning, save settings, process CSV uploads and respond to support,
-            correction, access or deletion requests.
+            planning, save settings, process CSV uploads, process authorised
+            POS connections and respond to support, correction, access or
+            deletion requests.
           </p>
           <p>
             TODO: confirm final lawful bases, customer controller/processor
@@ -52,8 +59,10 @@ function PrivacyPage() {
           <h2>Processors and storage</h2>
           <p>
             The repository uses Firebase Authentication, Cloud Firestore and
-            Firebase App Check. TODO: confirm the Firebase/Google Cloud region,
-            any other production processors, international-transfer position and
+            Firebase App Check. If a customer connects Square, Square is also
+            used as the third-party POS provider for operational transaction
+            data. TODO: confirm the Firebase/Google Cloud region, any other
+            production processors, international-transfer position and
             subprocessors before launch.
           </p>
         </section>

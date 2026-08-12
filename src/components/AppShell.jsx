@@ -23,10 +23,10 @@ const NAV_ITEMS = [
     match: ({ pathname }) => pathname === "/rota",
   },
   {
-    label: "Data / Imports",
-    to: "/?view=setup#data-imports",
+    label: "Data Sources",
+    to: "/data-sources",
     icon: "upload",
-    match: ({ pathname, hash }) => pathname === "/" && hash === "#data-imports",
+    match: ({ pathname }) => pathname === "/data-sources",
   },
   {
     label: "Settings",
@@ -79,6 +79,7 @@ function ShellIcon({ name }) {
 function getPageTitle(pathname, search) {
   if (pathname === "/rota") return "Rota";
   if (pathname === "/settings") return "Settings";
+  if (pathname === "/data-sources") return "Data Sources";
   if (search.includes("view=setup")) return "Data / Imports";
   if (pathname === "/") return "Dashboard";
   return "Dashboard";
