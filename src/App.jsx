@@ -84,9 +84,17 @@ function ProfileReadyRoute({ children }) {
 }
 
 function CompleteProfileRoute({ children }) {
-  const { hasProfile } = useBusinessProfile();
-  if (!hasProfile) {
+  const { hasProfile, needsOnboarding } = useBusinessProfile();
+  if (needsOnboarding || !hasProfile) {
     return <Navigate to="/onboarding" replace />;
+  }
+  return children;
+}
+
+function OnboardingRoute({ children }) {
+  const { hasProfile, needsOnboarding } = useBusinessProfile();
+  if (!needsOnboarding && hasProfile) {
+    return <Navigate to="/" replace />;
   }
   return children;
 }
@@ -105,7 +113,9 @@ function AppRoutes() {
           element={
             <ProtectedRoute>
               <ProfileReadyRoute>
-                <OnboardingPage />
+                <OnboardingRoute>
+                  <OnboardingPage />
+                </OnboardingRoute>
               </ProfileReadyRoute>
             </ProtectedRoute>
           }

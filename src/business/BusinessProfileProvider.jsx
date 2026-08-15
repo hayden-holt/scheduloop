@@ -1,38 +1,24 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { doc, getDoc, serverTimestamp, setDoc } from "firebase/firestore";
+import {
+  collection,
+  doc,
+  getDoc,
+  serverTimestamp,
+  setDoc,
+  writeBatch,
+} from "firebase/firestore";
 import { useAuth } from "../auth/AuthContext";
 import { db } from "../firebase";
 import { BusinessProfileContext } from "./BusinessProfileContext";
-
-const WRITE_ROLES = new Set(["owner", "admin", "manager"]);
-
-const PROFILE_WRITE_KEYS = new Set([
-  "businessType",
-  "businessName",
-  "businessSubtype",
-  "location",
-  "customerPattern",
-  "businessRhythm",
-  "demandEstimates",
-  "roles",
-  "hours",
-  "busyLevel",
-  "peakStaff",
-  "csvDemand",
-  "dayConfigs",
-  "operatingRules",
-  "staffingFeedback",
-]);
-
-function isCompleteProfile(profile) {
-  return Boolean(
-    profile &&
-      profile.businessType &&
-      Array.isArray(profile.roles) &&
-      profile.roles.length > 0 &&
-      profile.hours
-  );
-}
+import {
+  buildCompletedOnboardingState,
+  canWriteProfile,
+  createLegacyMembership,
+  isCompleteProfile,
+  normalizeMembershipData,
+  sanitizeProfilePatch,
+  shouldLoadBusinessProfileForMembership,
+} from "./businessProfileState";
 
 function requireSignedInUser(user) {
   if (!user?.uid) {
@@ -46,64 +32,8 @@ function createPermissionError(message) {
   return error;
 }
 
-function sanitizeText(value, maxLength) {
-  return String(value || "").trim().slice(0, maxLength);
-}
-
-function sanitizeProfilePatch(config) {
-  return Object.fromEntries(
-    Object.entries(config || {})
-      .filter(([key]) => PROFILE_WRITE_KEYS.has(key))
-      .map(([key, value]) => {
-        if (key === "businessName") return [key, sanitizeText(value, 120)];
-        if (key === "businessSubtype") return [key, sanitizeText(value, 80)];
-        if (key === "businessType") return [key, sanitizeText(value, 40)];
-        if (key === "location") return [key, sanitizeText(value, 120)];
-        if (key === "customerPattern") return [key, sanitizeText(value, 40)];
-        if (key === "businessRhythm") return [key, sanitizeText(value, 40)];
-        if (key === "busyLevel") return [key, sanitizeText(value, 40)];
-        return [key, value];
-      })
-  );
-}
-
-function normalizeRole(role) {
-  const normalized = String(role || "").trim().toLowerCase();
-  return WRITE_ROLES.has(normalized) || normalized === "employee"
-    ? normalized
-    : "manager";
-}
-
 function getMembershipFromSnap(snapshot) {
-  if (!snapshot.exists()) return null;
-
-  const data = snapshot.data();
-  const businessId = sanitizeText(data.businessId, 128);
-  const status = sanitizeText(data.status || "active", 40);
-
-  if (!businessId || status !== "active") return null;
-
-  return {
-    businessId,
-    role: normalizeRole(data.role),
-    status,
-    email: sanitizeText(data.email, 180),
-    legacy: false,
-  };
-}
-
-function createLegacyMembership(user) {
-  return {
-    businessId: user.uid,
-    role: "owner",
-    status: "legacy",
-    email: user.email || "",
-    legacy: true,
-  };
-}
-
-function canWriteProfile(membership) {
-  return Boolean(membership && WRITE_ROLES.has(membership.role));
+  return snapshot.exists() ? normalizeMembershipData(snapshot.data()) : null;
 }
 
 function logProfileError(label, error) {
@@ -141,11 +71,43 @@ export function BusinessProfileProvider({ children }) {
         const membershipSnap = await getDoc(doc(db, "memberships", user.uid));
         const hasMembershipRecord = membershipSnap.exists();
         let nextMembership = getMembershipFromSnap(membershipSnap);
-        let nextBusinessId = nextMembership?.businessId || "";
+        let nextBusinessId = "";
         let profileSnap = null;
 
-        if (nextBusinessId) {
-          profileSnap = await getDoc(doc(db, "businessProfiles", nextBusinessId));
+        if (nextMembership?.status && nextMembership.status !== "active") {
+          nextMembership = null;
+        } else if (
+          nextMembership?.onboardingComplete &&
+          !nextMembership.businessId
+        ) {
+          throw new Error("Completed membership is missing a businessId.");
+        } else if (shouldLoadBusinessProfileForMembership(nextMembership)) {
+          nextBusinessId = nextMembership.businessId;
+          profileSnap = await getDoc(
+            doc(db, "businessProfiles", nextBusinessId)
+          );
+          if (!profileSnap.exists()) {
+            if (nextMembership.legacyProvisioned) {
+              nextMembership = {
+                ...nextMembership,
+                businessId: "",
+                onboardingComplete: false,
+                needsOnboarding: true,
+                legacyProvisioned: false,
+              };
+              nextBusinessId = "";
+              profileSnap = null;
+            } else {
+              throw new Error("Expected business profile was not found.");
+            }
+          } else if (nextMembership.legacyProvisioned) {
+            nextMembership = {
+              ...nextMembership,
+              onboardingComplete: true,
+              needsOnboarding: false,
+              legacyProvisioned: false,
+            };
+          }
         } else if (!hasMembershipRecord) {
           const legacySnap = await getDoc(doc(db, "businessProfiles", user.uid));
           if (legacySnap.exists()) {
@@ -160,7 +122,23 @@ export function BusinessProfileProvider({ children }) {
 
         if (!active) return;
 
-        if (!nextMembership || !nextBusinessId) {
+        if (!nextMembership) {
+          setProfile(null);
+          setMembership(null);
+          setBusinessId("");
+          setAccessDenied(true);
+          return;
+        }
+
+        if (nextMembership.needsOnboarding) {
+          setProfile(null);
+          setMembership(nextMembership);
+          setBusinessId("");
+          setAccessDenied(false);
+          return;
+        }
+
+        if (!nextBusinessId) {
           setProfile(null);
           setMembership(null);
           setBusinessId("");
@@ -259,6 +237,67 @@ export function BusinessProfileProvider({ children }) {
     [businessId, membership, profile, user]
   );
 
+  const completeOnboarding = useCallback(
+    async (config) => {
+      requireSignedInUser(user);
+
+      if (!membership || membership.status !== "active" || !canWriteProfile(membership)) {
+        throw createPermissionError(
+          "This account is not authorised to create a ScheduleLoop workspace."
+        );
+      }
+
+      const profileRef = doc(collection(db, "businessProfiles"));
+      const membershipRef = doc(db, "memberships", user.uid);
+      const nextBusinessId = profileRef.id;
+      const {
+        safePatch,
+        profile: nextProfile,
+        membership: nextMembership,
+      } = buildCompletedOnboardingState({
+        config,
+        businessId: nextBusinessId,
+        user,
+        membership,
+        profile,
+      });
+      const timestamp = serverTimestamp();
+      const firestoreProfile = {
+        ...safePatch,
+        businessId: nextBusinessId,
+        ownerUid: profile?.ownerUid || user.uid,
+        updatedBy: user.uid,
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      };
+
+      try {
+        const batch = writeBatch(db);
+        batch.set(profileRef, firestoreProfile);
+        batch.set(
+          membershipRef,
+          {
+            businessId: nextBusinessId,
+            onboardingComplete: true,
+            updatedAt: timestamp,
+          },
+          { merge: true }
+        );
+        await batch.commit();
+        setProfile(nextProfile);
+        setMembership(nextMembership);
+        setBusinessId(nextBusinessId);
+        setAccessDenied(false);
+        setProfileError("");
+        return nextProfile;
+      } catch (err) {
+        logProfileError("Failed to complete ScheduleLoop onboarding", err);
+        throw err;
+      }
+    },
+    [membership, profile, user]
+  );
+
   const saveCsvDemand = useCallback(
     async (csvDemand) => saveProfile({ csvDemand }),
     [saveProfile]
@@ -272,8 +311,10 @@ export function BusinessProfileProvider({ children }) {
       accessDenied,
       canManageProfile: canWriteProfile(membership),
       hasProfile: isCompleteProfile(profile),
+      needsOnboarding: Boolean(membership?.needsOnboarding),
       loadingProfile,
       profileError,
+      completeOnboarding,
       saveProfile,
       saveCsvDemand,
     }),
@@ -284,6 +325,7 @@ export function BusinessProfileProvider({ children }) {
       accessDenied,
       loadingProfile,
       profileError,
+      completeOnboarding,
       saveProfile,
       saveCsvDemand,
     ]

@@ -10,6 +10,10 @@ service cloud.firestore {
       return /databases/$(database)/documents/memberships/$(request.auth.uid);
     }
 
+    function businessProfilePath(businessId) {
+      return /databases/$(database)/documents/businessProfiles/$(businessId);
+    }
+
     function hasMembershipDoc() {
       return signedIn() && exists(membershipPath());
     }
@@ -18,10 +22,23 @@ service cloud.firestore {
       return get(membershipPath()).data;
     }
 
-    function hasActiveMembership(businessId) {
+    function hasCompletedMembership(businessId) {
       return hasMembershipDoc()
         && membership().businessId == businessId
-        && membership().status == 'active';
+        && membership().status == 'active'
+        && membership().onboardingComplete == true;
+    }
+
+    function hasLegacyMembership(businessId) {
+      return hasMembershipDoc()
+        && membership().businessId == businessId
+        && membership().status == 'active'
+        && !('onboardingComplete' in membership());
+    }
+
+    function hasActiveMembership(businessId) {
+      return hasCompletedMembership(businessId)
+        || hasLegacyMembership(businessId);
     }
 
     function hasReadRole(role) {
@@ -43,12 +60,12 @@ service cloud.firestore {
     function isLegacyOwnerBusiness(businessId) {
       return isSelfBusinessId(businessId)
         && !hasMembershipDoc()
-        && get(/databases/$(database)/documents/businessProfiles/$(businessId)).data.ownerUid == request.auth.uid;
+        && get(businessProfilePath(businessId)).data.ownerUid == request.auth.uid;
     }
 
     function canReadBusiness(businessId) {
       return (hasActiveMembership(businessId) && hasReadRole(membership().role))
-        || (!hasMembershipDoc() && isSelfBusinessId(businessId));
+        || isLegacyOwnerBusiness(businessId);
     }
 
     function canWriteBusiness(businessId) {
@@ -143,6 +160,23 @@ service cloud.firestore {
         && (!('ownerUid' in request.resource.data) || request.resource.data.ownerUid is string);
     }
 
+    function profileCreatePayloadValid(businessId) {
+      return profilePayloadValid(businessId)
+        && request.resource.data.ownerUid == request.auth.uid;
+    }
+
+    function profileOwnerUnchangedOrBackfilled() {
+      return (('ownerUid' in resource.data)
+          && request.resource.data.ownerUid == resource.data.ownerUid)
+        || (!('ownerUid' in resource.data)
+          && request.resource.data.ownerUid == request.auth.uid);
+    }
+
+    function profileUpdatePayloadValid(businessId) {
+      return profilePayloadValid(businessId)
+        && profileOwnerUnchangedOrBackfilled();
+    }
+
     function profileServerManagedFieldsAbsent() {
       return !('posDemand' in request.resource.data)
         && !('posDemandUpdatedAt' in request.resource.data);
@@ -155,6 +189,66 @@ service cloud.firestore {
         && (!('posDemandUpdatedAt' in request.resource.data)
           || (('posDemandUpdatedAt' in resource.data)
             && request.resource.data.posDemandUpdatedAt == resource.data.posDemandUpdatedAt));
+    }
+
+    function onboardingIncomplete(data) {
+      return !('onboardingComplete' in data)
+        || data.onboardingComplete != true;
+    }
+
+    function membershipBusinessIdMissing(data) {
+      return !('businessId' in data)
+        || data.businessId == null
+        || data.businessId == '';
+    }
+
+    function onboardingMembershipAfterValid(businessId) {
+      return getAfter(membershipPath()).data.businessId == businessId
+        && getAfter(membershipPath()).data.onboardingComplete == true
+        && getAfter(membershipPath()).data.status == membership().status
+        && getAfter(membershipPath()).data.role == membership().role;
+    }
+
+    function onboardingBusinessAfterValid(businessId) {
+      return existsAfter(businessProfilePath(businessId))
+        && getAfter(businessProfilePath(businessId)).data.businessId == businessId
+        && getAfter(businessProfilePath(businessId)).data.ownerUid == request.auth.uid
+        && getAfter(businessProfilePath(businessId)).data.updatedBy == request.auth.uid;
+    }
+
+    function canCompleteOnboardingForBusiness(businessId) {
+      return hasMembershipDoc()
+        && membership().status == 'active'
+        && hasWriteRole(membership().role)
+        && onboardingIncomplete(membership())
+        && membershipBusinessIdMissing(membership())
+        && onboardingMembershipAfterValid(businessId)
+        && request.resource.data.ownerUid == request.auth.uid;
+    }
+
+    function membershipCompletionTouchesOnlyAllowedFields() {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+        'businessId',
+        'onboardingComplete',
+        'updatedAt'
+      ]);
+    }
+
+    function canCompleteOwnMembershipOnboarding(userId) {
+      return signedIn()
+        && request.auth.uid == userId
+        && resource.data.status == 'active'
+        && hasWriteRole(resource.data.role)
+        && onboardingIncomplete(resource.data)
+        && membershipBusinessIdMissing(resource.data)
+        && request.resource.data.status == resource.data.status
+        && request.resource.data.role == resource.data.role
+        && membershipCompletionTouchesOnlyAllowedFields()
+        && request.resource.data.businessId is string
+        && request.resource.data.businessId.size() > 0
+        && request.resource.data.businessId.size() <= 128
+        && request.resource.data.onboardingComplete == true
+        && onboardingBusinessAfterValid(request.resource.data.businessId);
     }
 
     function employeeKeysAllowed() {
@@ -238,17 +332,19 @@ service cloud.firestore {
 
     match /memberships/{userId} {
       allow read: if signedIn() && request.auth.uid == userId;
-      allow create, update, delete: if false;
+      allow update: if canCompleteOwnMembershipOnboarding(userId);
+      allow create, delete: if false;
     }
 
     match /businessProfiles/{businessId} {
       allow read: if canReadBusiness(businessId);
-      allow create: if canWriteBusiness(businessId)
-        && profilePayloadValid(businessId)
+      allow create: if (canWriteBusiness(businessId)
+          || canCompleteOnboardingForBusiness(businessId))
+        && profileCreatePayloadValid(businessId)
         && profileServerManagedFieldsAbsent();
       allow update: if canWriteBusiness(businessId)
         && resourceBusinessIdMatches(businessId)
-        && profilePayloadValid(businessId)
+        && profileUpdatePayloadValid(businessId)
         && profileServerManagedFieldsUnchanged();
       allow delete: if false;
 

@@ -86,7 +86,8 @@ function getProfileSaveErrorMessage(error) {
 
 function OnboardingPage() {
   const navigate = useNavigate();
-  const { profile, saveProfile } = useBusinessProfile();
+  const { profile, saveProfile, completeOnboarding, needsOnboarding } =
+    useBusinessProfile();
   const initialBasics = normalizeBusinessProfileBasics(profile || {});
   const initialOpeningHours = normalizeOpeningHours(profile?.hours);
   const initialDemandEstimates = normalizeDemandEstimates(
@@ -252,7 +253,11 @@ function OnboardingPage() {
     };
 
     try {
-      await saveProfile(businessProfile);
+      if (needsOnboarding) {
+        await completeOnboarding(businessProfile);
+      } else {
+        await saveProfile(businessProfile);
+      }
       navigate("/");
     } catch (err) {
       if (import.meta.env.DEV) console.error(err);

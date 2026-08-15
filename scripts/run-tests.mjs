@@ -89,6 +89,12 @@ import {
   normalizeOpeningHours,
 } from "../src/utils/businessProfileSetup.js";
 import {
+  buildCompletedOnboardingState,
+  getWorkspaceRouteState,
+  normalizeMembershipData,
+  shouldLoadBusinessProfileForMembership,
+} from "../src/business/businessProfileState.js";
+import {
   canManageLegacyBusinessProfile,
   canManagePosIntegration,
 } from "../functions/src/pos/authz.js";
@@ -1516,6 +1522,164 @@ test("auth helpers return friendly messages and validate email links", () => {
   );
 });
 
+test("auth route state sends unauthenticated users to login", () => {
+  assert.equal(getWorkspaceRouteState({ isAuthenticated: false }), "login");
+});
+
+test("membership route state denies missing and inactive memberships", () => {
+  assert.equal(
+    getWorkspaceRouteState({
+      isAuthenticated: true,
+      accessDenied: true,
+    }),
+    "accessDenied"
+  );
+  assert.equal(
+    getWorkspaceRouteState({
+      isAuthenticated: true,
+      membership: normalizeMembershipData({
+        status: "inactive",
+        role: "owner",
+        businessId: "biz-1",
+        onboardingComplete: true,
+      }),
+    }),
+    "accessDenied"
+  );
+});
+
+test("first-time authorised memberships route to onboarding", () => {
+  const noBusinessIdField = normalizeMembershipData({
+    status: "active",
+    role: "owner",
+    onboardingComplete: false,
+  });
+
+  assert.equal(
+    getWorkspaceRouteState({
+      isAuthenticated: true,
+      membership: normalizeMembershipData({
+        status: "active",
+        role: "owner",
+        businessId: null,
+        onboardingComplete: false,
+      }),
+    }),
+    "onboarding"
+  );
+  assert.equal(
+    getWorkspaceRouteState({
+      isAuthenticated: true,
+      membership: noBusinessIdField,
+    }),
+    "onboarding"
+  );
+  assert.equal(
+    getWorkspaceRouteState({
+      isAuthenticated: true,
+      membership: normalizeMembershipData({
+        status: "active",
+        role: "owner",
+        businessId: "manually-added-before-onboarding",
+      }),
+    }),
+    "onboarding"
+  );
+  assert.equal(shouldLoadBusinessProfileForMembership(noBusinessIdField), false);
+});
+
+test("legacy memberships only load a business profile for compatibility", () => {
+  const legacyMembership = normalizeMembershipData({
+    status: "active",
+    role: "owner",
+    businessId: "legacy-business-id",
+  });
+  const explicitIncompleteMembership = normalizeMembershipData({
+    status: "active",
+    role: "owner",
+    businessId: "not-onboarded-yet",
+    onboardingComplete: false,
+  });
+
+  assert.equal(legacyMembership.legacyProvisioned, true);
+  assert.equal(shouldLoadBusinessProfileForMembership(legacyMembership), true);
+  assert.equal(
+    shouldLoadBusinessProfileForMembership(explicitIncompleteMembership),
+    false
+  );
+});
+
+test("onboarding completion links a generated business to the membership", () => {
+  const { profile, membership } = buildCompletedOnboardingState({
+    businessId: "generated-business-id",
+    user: { uid: "user-1", email: "owner@example.com" },
+    membership: normalizeMembershipData({
+      email: "owner@example.com",
+      role: "owner",
+      status: "active",
+      businessId: null,
+      onboardingComplete: false,
+    }),
+    config: {
+      businessName: "Hayden Cafe",
+      businessType: "cafe",
+      roles: [{ id: "barista" }],
+      hours: { open: "09:00", close: "17:00" },
+    },
+  });
+
+  assert.equal(profile.businessId, "generated-business-id");
+  assert.equal(profile.ownerUid, "user-1");
+  assert.equal(membership.businessId, "generated-business-id");
+  assert.equal(membership.onboardingComplete, true);
+  assert.equal(membership.needsOnboarding, false);
+  assert.equal(
+    getWorkspaceRouteState({
+      isAuthenticated: true,
+      membership,
+      profile,
+    }),
+    "dashboard"
+  );
+});
+
+test("returning authorised users with a valid business route to dashboard", () => {
+  assert.equal(
+    getWorkspaceRouteState({
+      isAuthenticated: true,
+      membership: normalizeMembershipData({
+        status: "active",
+        role: "manager",
+        businessId: "biz-1",
+        onboardingComplete: true,
+      }),
+      profile: {
+        businessId: "biz-1",
+        businessType: "cafe",
+        roles: [{ id: "barista" }],
+        hours: { open: "09:00", close: "17:00" },
+      },
+    }),
+    "dashboard"
+  );
+});
+
+test("provisioned account profile read failures stay real errors", () => {
+  assert.equal(
+    getWorkspaceRouteState({
+      isAuthenticated: true,
+      membership: normalizeMembershipData({
+        status: "active",
+        role: "owner",
+        businessId: "biz-1",
+        onboardingComplete: true,
+      }),
+      profileError: "Profile could not load",
+    }),
+    "profileError"
+  );
+});
+
 test("POS integration management is tenant and role scoped", () => {
   assert.equal(
     canManagePosIntegration(
@@ -1795,14 +1959,54 @@ test("Firestore rules keep business data membership-gated", () => {
   );
 
   assert.match(rules, /match \/memberships\/\{userId\}/);
+  assert.match(rules, /allow read: if signedIn\(\) && request\.auth\.uid == userId;/);
   assert.match(rules, /membership\(\)\.businessId == businessId/);
+  assert.match(rules, /membership\(\)\.onboardingComplete == true/);
+  assert.match(rules, /function hasLegacyMembership\(businessId\)/);
+  assert.match(rules, /!\('onboardingComplete' in membership\(\)\)/);
   assert.match(rules, /request\.resource\.data\.businessId == businessId/);
-  assert.match(rules, /allow create, update, delete: if false;/);
+  assert.match(rules, /allow update: if canCompleteOwnMembershipOnboarding\(userId\);/);
+  assert.match(rules, /allow create, delete: if false;/);
+  assert.match(rules, /membershipBusinessIdMissing\(membership\(\)\)/);
+  assert.match(rules, /membershipBusinessIdMissing\(resource\.data\)/);
+  assert.match(rules, /getAfter\(membershipPath\(\)\)\.data\.businessId == businessId/);
+  assert.match(
+    rules,
+    /onboardingBusinessAfterValid\(request\.resource\.data\.businessId\)/
+  );
+  assert.match(rules, /getAfter\(businessProfilePath\(businessId\)\)\.data\.ownerUid == request\.auth\.uid/);
+  assert.match(rules, /profileCreatePayloadValid\(businessId\)/);
+  assert.match(rules, /profileUpdatePayloadValid\(businessId\)/);
+  assert.match(rules, /profileOwnerUnchangedOrBackfilled\(\)/);
+  assert.doesNotMatch(rules, /request\.time\s*<\s*timestamp\.date/);
   assert.doesNotMatch(rules, /allow\s+read,\s*write:\s*if\s+true/);
   assert.doesNotMatch(
     rules,
     /allow\s+read,\s*write:\s*if\s+request\.auth\s*!=\s*null/
   );
+});
+
+test("Firestore rules cover current ScheduleLoop data paths", () => {
+  const rules = fs.readFileSync(
+    new URL("../firestore.rules", import.meta.url),
+    "utf8"
+  );
+  const requiredMatches = [
+    /match \/businessProfiles\/\{businessId\}/,
+    /match \/employees\/\{employeeId\}/,
+    /match \/shifts\/\{shiftId\}/,
+    /match \/rotaWeeks\/\{weekStart\}/,
+    /match \/posConnections\/\{provider\}/,
+    /match \/demandBuckets\/\{bucketId\}/,
+    /match \/posTransactions\/\{transactionId\}/,
+    /match \/posSecrets\/\{secretId\}/,
+    /match \/posMerchantMappings\/\{mappingId\}/,
+    /match \/posWebhookEvents\/\{eventId\}/,
+    /match \/squareOAuthStates\/\{stateId\}/,
+    /match \/\{document=\*\*\}/,
+  ];
+
+  requiredMatches.forEach((pattern) => assert.match(rules, pattern));
 });
 
 test("Firestore rules deny client-side POS transaction injection", () => {
