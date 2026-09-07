@@ -1,4 +1,7 @@
 import { onCall, onRequest, HttpsError } from "firebase-functions/v2/https";
+import { defineSecret } from "firebase-functions/params";
+import { createSquareLifecycle } from "./pos/lifecycle.js";
+import { getSquareLocalTimestamp } from "./pos/timezone.js";
 import { initializeApp } from "firebase-admin/app";
 import {
   FieldValue,
@@ -15,8 +18,6 @@ import {
   SQUARE_SCOPES,
 } from "./pos/config.js";
 import {
-  decryptSecret,
-  encryptSecret,
   sha256,
 } from "./pos/crypto.js";
 import {
@@ -26,7 +27,6 @@ import {
 } from "./pos/authz.js";
 import {
   createOAuthStateRecord,
-  isOAuthStateRecordValid,
 } from "./pos/oauthState.js";
 import {
   getSquarePaymentIdFromWebhook,
@@ -46,11 +46,28 @@ import {
   listSquareLocations,
   listSquarePayments,
   revokeSquareAccessToken,
+  refreshSquareAccessToken,
 } from "./pos/squareClient.js";
 
 initializeApp();
 
 const db = getFirestore();
+const lifecycle = createSquareLifecycle({ db, stamp: () => FieldValue.serverTimestamp() });
+const applicationSecret = defineSecret("SQUARE_APPLICATION_SECRET");
+const encryptionKey = defineSecret("SQUARE_TOKEN_ENCRYPTION_KEY");
+const webhookSignatureKey = defineSecret("SQUARE_WEBHOOK_SIGNATURE_KEY");
+const squareOptions = {
+  region: "us-central1", timeoutSeconds: 120, maxInstances: 10,
+  secrets: [applicationSecret, encryptionKey],
+};
+const callableOptions = {
+  ...squareOptions,
+  cors: process.env.FUNCTIONS_EMULATOR === "true"
+    ? ["http://localhost:5173", "http://127.0.0.1:5173"]
+    : ["https://app.scheduleloop.co.uk"],
+};
+const LOCAL_APP_BASE_URL = "http://localhost:5173";
+const PRODUCTION_APP_BASE_URL = "https://app.scheduleloop.co.uk";
 
 function getEnv(name, fallback = "") {
   return process.env[name] || fallback;
@@ -63,11 +80,22 @@ function requireSquareEnabled() {
 }
 
 function getAppBaseUrl() {
-  return getEnv("APP_BASE_URL", "http://localhost:5173").replace(/\/$/, "");
+  return getEnv("FUNCTIONS_EMULATOR") === "true" ? LOCAL_APP_BASE_URL : PRODUCTION_APP_BASE_URL;
 }
 
 function getSquareConfig() {
   const environment = normalizeSquareEnvironment(getEnv("SQUARE_ENVIRONMENT"));
+  if (!["production", "sandbox"].includes(getEnv("SQUARE_ENVIRONMENT"))) {
+    throw new HttpsError("failed-precondition", "Set a valid Square environment.");
+  }
+  if (getEnv("FUNCTIONS_EMULATOR") !== "true") {
+    const base = "https://us-central1-scheduloop-96f9a.cloudfunctions.net";
+    if (getEnv("APP_BASE_URL") !== PRODUCTION_APP_BASE_URL ||
+        getEnv("SQUARE_REDIRECT_URI") !== base + "/squareOAuthCallback" ||
+        getEnv("SQUARE_WEBHOOK_NOTIFICATION_URL") !== base + "/squareWebhook") {
+      throw new HttpsError("failed-precondition", "Square production URLs are not configured correctly.");
+    }
+  }
   return {
     environment,
     applicationId: getEnv("SQUARE_APPLICATION_ID"),
@@ -134,10 +162,6 @@ function getConnectionRef(businessId, provider = POS_PROVIDERS.SQUARE) {
   return db.doc(`businessProfiles/${businessId}/posConnections/${provider}`);
 }
 
-function getSecretRef(businessId, provider = POS_PROVIDERS.SQUARE) {
-  return db.doc(`posSecrets/${businessId}_${provider}`);
-}
-
 function getMerchantMappingRef(provider, merchantId) {
   return db.doc(`posMerchantMappings/${provider}_${merchantId}`);
 }
@@ -165,14 +189,15 @@ function getDefaultIntervalMinutes(profile) {
   return profile?.operatingRules?.intervalMinutes || 60;
 }
 
-async function rebuildPosDemandModel(businessId) {
+async function rebuildPosDemandModel(businessId, lease) {
   const profileSnap = await db.doc(`businessProfiles/${businessId}`).get();
   const profile = profileSnap.data() || {};
   const bucketsSnap = await db
     .collection(`businessProfiles/${businessId}/demandBuckets`)
     .where("source", "==", POS_PROVIDERS.SQUARE)
-    .limit(5000)
+    .limit(5001)
     .get();
+  if (bucketsSnap.size > 5000) throw new Error("Square history exceeds the supported aggregation limit.");
   const buckets = bucketsSnap.docs.map((doc) => doc.data());
   const model = createPosDemandModelFromBuckets({
     buckets,
@@ -180,13 +205,13 @@ async function rebuildPosDemandModel(businessId) {
     intervalMinutes: getDefaultIntervalMinutes(profile),
   });
 
-  await db.doc(`businessProfiles/${businessId}`).set(
+  await lifecycle.guarded(lease, (tx) => tx.set(db.doc(`businessProfiles/${businessId}`),
     {
       posDemand: model,
       posDemandUpdatedAt: FieldValue.serverTimestamp(),
     },
     { merge: true }
-  );
+  ));
 
   return model;
 }
@@ -195,12 +220,14 @@ async function ingestNormalisedTransaction({
   transaction,
   syncSource,
   rebuildDemand = true,
+  lease,
+  timezone,
 }) {
   const businessId = transaction.businessId;
   const profileSnap = await db.doc(`businessProfiles/${businessId}`).get();
   const profile = profileSnap.data() || {};
   const bucket = getDemandBucketKey({
-    timestamp: transaction.timestamp,
+    timestamp: getSquareLocalTimestamp(transaction.timestamp, timezone),
     openingHours: getDefaultOpeningHours(profile),
     intervalMinutes: getDefaultIntervalMinutes(profile),
   });
@@ -213,9 +240,14 @@ async function ingestNormalisedTransaction({
   const bucketRef = getBucketRef(businessId, transaction.source, bucket);
   let result = { status: "processed" };
 
-  await db.runTransaction(async (firestoreTx) => {
+  await lifecycle.guarded(lease, async (firestoreTx) => {
+    result = { status: "processed" };
     const existingSnap = await firestoreTx.get(txRef);
     const existing = existingSnap.exists ? existingSnap.data() : null;
+    if (existing?.providerUpdatedAt && Date.parse(existing.providerUpdatedAt) > Date.parse(transaction.updatedAt)) {
+      result = { status: "stale" };
+      return;
+    }
     const incomingFingerprint = sha256(
       JSON.stringify({
         status: transaction.status,
@@ -287,6 +319,7 @@ async function ingestNormalisedTransaction({
         ...transaction,
         bucket,
         fingerprint: incomingFingerprint,
+        providerUpdatedAt: transaction.updatedAt,
         syncSource,
         createdAt: existing?.createdAt || FieldValue.serverTimestamp(),
         updatedAt: FieldValue.serverTimestamp(),
@@ -296,39 +329,22 @@ async function ingestNormalisedTransaction({
   });
 
   if (result.status === "processed") {
-    await getConnectionRef(businessId).set(
+    await lifecycle.guarded(lease, (tx) => tx.set(getConnectionRef(businessId),
       {
         lastSuccessfulSyncAt: FieldValue.serverTimestamp(),
         mostRecentImportedTransactionAt: transaction.timestamp,
         updatedAt: FieldValue.serverTimestamp(),
       },
       { merge: true }
-    );
-
-    if (rebuildDemand) {
-      await rebuildPosDemandModel(businessId);
-    }
+    ));
   }
 
+  // A retry must repair a model write that failed after payment ingestion committed.
+  if (rebuildDemand) await rebuildPosDemandModel(businessId, lease);
   return result;
 }
 
-async function getSquareSecret(businessId) {
-  const config = getSquareConfig();
-  const secretSnap = await getSecretRef(businessId).get();
-  if (!secretSnap.exists) {
-    throw new Error("Square connection credentials are unavailable.");
-  }
-
-  const data = secretSnap.data();
-  return {
-    ...data,
-    accessToken: decryptSecret(data.encryptedAccessToken, config.tokenEncryptionKey),
-    refreshToken: decryptSecret(data.encryptedRefreshToken, config.tokenEncryptionKey),
-  };
-}
-
-export const createSquareOAuthUrl = onCall(async (request) => {
+export const createSquareOAuthUrl = onCall(callableOptions, async (request) => {
   requireSquareEnabled();
   if (!request.auth?.uid) {
     throw new HttpsError("unauthenticated", "Sign in before connecting Square.");
@@ -363,142 +379,70 @@ export const createSquareOAuthUrl = onCall(async (request) => {
   };
 });
 
-export const squareOAuthCallback = onRequest(async (req, res) => {
+export const squareOAuthCallback = onRequest(squareOptions, async (req, res) => {
+  res.set("Cache-Control", "no-store");
+  res.set("Referrer-Policy", "no-referrer");
+  if (req.method !== "GET") { res.status(405).end(); return; }
+  let phase = "configuration";
   try {
     requireSquareEnabled();
     const config = getSquareConfig();
     assertSquareOAuthConfigured(config);
-
-    const state = String(req.query.state || "");
-    const code = String(req.query.code || "");
-    const error = String(req.query.error || "");
-    const stateRef = db.doc(`squareOAuthStates/${sha256(state)}`);
-    const stateSnap = await stateRef.get();
-    const stateRecord = stateSnap.exists ? stateSnap.data() : null;
-
-    if (error) {
-      res.redirect(`${getAppBaseUrl()}/data-sources?square=denied`);
-      return;
+    const state = req.query.state;
+    const code = req.query.code;
+    if (typeof state !== "string" || !/^[A-Za-z0-9_-]{43}$/.test(state) ||
+        (!req.query.error && (typeof code !== "string" || !code || code.length > 4096))) {
+      res.redirect(getAppBaseUrl() + "/data-sources?square=invalid"); return;
     }
-
-    if (!code || !isOAuthStateRecordValid(stateRecord)) {
-      res.redirect(`${getAppBaseUrl()}/data-sources?square=invalid`);
-      return;
-    }
-
-    const token = await exchangeSquareAuthorizationCode({
-      code,
-      clientId: config.applicationId,
-      clientSecret: config.applicationSecret,
-      redirectUri: config.redirectUri,
-      environment: config.environment,
+    phase = "state-validation";
+    const record = await lifecycle.consumeState(db.doc("squareOAuthStates/" + sha256(state)));
+    if (req.query.error) { res.redirect(getAppBaseUrl() + "/data-sources?square=denied"); return; }
+    phase = "connection-lock";
+    await lifecycle.withLease(record.businessId, async (lease) => {
+      phase = "token-exchange";
+      const token = await exchangeSquareAuthorizationCode({ code, clientId: config.applicationId,
+        clientSecret: config.applicationSecret, redirectUri: config.redirectUri, environment: config.environment });
+      try {
+        phase = "locations";
+        const locations = await listSquareLocations({ accessToken: token.access_token, environment: config.environment });
+        const connectedLocations = locations.map((location) => ({
+          squareLocationId: sanitizeBusinessId(location.id), scheduleLoopLocationId: "default",
+          name: location.name || "Square location", timezone: location.timezone || "Europe/London", status: location.status || "",
+        }));
+        phase = "connection-save";
+        await lifecycle.saveConnection(lease, { uid: record.uid, token, locations: connectedLocations, config });
+      } catch (error) {
+        // Never revoke another active connection's entire merchant authorization.
+        await revokeSquareAccessToken({ accessToken: token.access_token, clientId: config.applicationId,
+          clientSecret: config.applicationSecret, environment: config.environment, onlyAccessToken: true }).catch(() => {});
+        throw error;
+      }
     });
-    const merchantId = token.merchant_id;
-    const locations = await listSquareLocations({
-      accessToken: token.access_token,
-      environment: config.environment,
-    });
-    const connectedLocations = locations.map((location) => ({
-      squareLocationId: location.id,
-      scheduleLoopLocationId: "default",
-      name: location.name || "Square location",
-      timezone: location.timezone || "",
-      status: location.status || "",
-    }));
-
-    await Promise.all([
-      stateRef.set({ consumedAt: FieldValue.serverTimestamp() }, { merge: true }),
-      getSecretRef(stateRecord.businessId).set({
-        businessId: stateRecord.businessId,
-        provider: POS_PROVIDERS.SQUARE,
-        externalMerchantId: merchantId,
-        encryptedAccessToken: encryptSecret(
-          token.access_token,
-          config.tokenEncryptionKey
-        ),
-        encryptedRefreshToken: encryptSecret(
-          token.refresh_token,
-          config.tokenEncryptionKey
-        ),
-        accessTokenExpiresAt: token.expires_at || "",
-        environment: config.environment,
-        updatedAt: FieldValue.serverTimestamp(),
-      }),
-      getConnectionRef(stateRecord.businessId).set(
-        {
-          businessId: stateRecord.businessId,
-          provider: POS_PROVIDERS.SQUARE,
-          externalMerchantId: merchantId,
-          connectedLocations,
-          connectionStatus: POS_CONNECTION_STATUSES.CONNECTED,
-          environment: config.environment,
-          connectedAt: FieldValue.serverTimestamp(),
-          updatedAt: FieldValue.serverTimestamp(),
-        },
-        { merge: true }
-      ),
-      getMerchantMappingRef(POS_PROVIDERS.SQUARE, merchantId).set({
-        businessId: stateRecord.businessId,
-        provider: POS_PROVIDERS.SQUARE,
-        externalMerchantId: merchantId,
-        connectedLocations,
-        connectionStatus: POS_CONNECTION_STATUSES.CONNECTED,
-        updatedAt: FieldValue.serverTimestamp(),
-      }),
-    ]);
-
-    res.redirect(`${getAppBaseUrl()}/data-sources?square=connected`);
+    res.redirect(getAppBaseUrl() + "/data-sources?square=connected");
   } catch (error) {
     console.error("Square OAuth callback failed", {
-      message: error.message,
-      provider: POS_PROVIDERS.SQUARE,
+      provider: POS_PROVIDERS.SQUARE, phase,
+      providerStatus: Number.isInteger(error?.status) ? error.status : null,
     });
-    res.redirect(`${getAppBaseUrl()}/data-sources?square=error`);
+    res.redirect(getAppBaseUrl() + "/data-sources?square=error");
   }
 });
 
-export const disconnectSquare = onCall(async (request) => {
+export const disconnectSquare = onCall(callableOptions, async (request) => {
   requireSquareEnabled();
-  if (!request.auth?.uid) {
-    throw new HttpsError("unauthenticated", "Sign in before disconnecting Square.");
-  }
-
+  if (!request.auth?.uid) throw new HttpsError("unauthenticated", "Sign in before disconnecting Square.");
   const businessId = sanitizeBusinessId(request.data?.businessId);
   await requireManageAccess(request.auth.uid, businessId);
-  const config = getSquareConfig();
-  const secret = await getSquareSecret(businessId).catch(() => null);
-
-  if (secret?.accessToken) {
-    await revokeSquareAccessToken({
-      accessToken: secret.accessToken,
-      clientId: config.applicationId,
-      clientSecret: config.applicationSecret,
-      environment: secret.environment || config.environment,
-    }).catch((error) => {
-      console.warn("Square token revoke failed", {
-        businessId,
-        provider: POS_PROVIDERS.SQUARE,
-        message: error.message,
-      });
-    });
+  try {
+    return await lifecycle.withLease(businessId, (lease) => lifecycle.disconnect(lease, {
+      uid: request.auth.uid, config: getSquareConfig(), revoke: revokeSquareAccessToken,
+    }));
+  } catch {
+    throw new HttpsError("unavailable", "Square disconnect could not finish. Retry to complete token revocation.");
   }
-
-  await Promise.all([
-    getSecretRef(businessId).delete(),
-    getConnectionRef(businessId).set(
-      {
-        connectionStatus: POS_CONNECTION_STATUSES.DISCONNECTED,
-        disconnectedAt: FieldValue.serverTimestamp(),
-        updatedAt: FieldValue.serverTimestamp(),
-      },
-      { merge: true }
-    ),
-  ]);
-
-  return { status: POS_CONNECTION_STATUSES.DISCONNECTED };
 });
 
-export const syncSquareHistory = onCall(async (request) => {
+export const syncSquareHistory = onCall({ ...callableOptions, timeoutSeconds: 540, memory: "512MiB" }, async (request) => {
   requireSquareEnabled();
   if (!request.auth?.uid) {
     throw new HttpsError("unauthenticated", "Sign in before syncing Square.");
@@ -507,9 +451,11 @@ export const syncSquareHistory = onCall(async (request) => {
   const businessId = sanitizeBusinessId(request.data?.businessId);
   await requireManageAccess(request.auth.uid, businessId);
 
+  return lifecycle.withLease(businessId, async (lease) => {
+  const config = getSquareConfig();
   const connectionSnap = await getConnectionRef(businessId).get();
   const connection = connectionSnap.data() || {};
-  const secret = await getSquareSecret(businessId);
+  const secret = await lifecycle.getSecret(lease, config, refreshSquareAccessToken);
   const window = createBackfillWindow({
     days: request.data?.days || DEFAULT_BACKFILL_DAYS,
   });
@@ -517,14 +463,14 @@ export const syncSquareHistory = onCall(async (request) => {
     ? connection.connectedLocations
     : [{ squareLocationId: "" }];
 
-  await getConnectionRef(businessId).set(
+  await lifecycle.guarded(lease, (tx) => tx.set(getConnectionRef(businessId),
     {
       connectionStatus: POS_CONNECTION_STATUSES.SYNCING,
       lastSyncStartedAt: FieldValue.serverTimestamp(),
       updatedAt: FieldValue.serverTimestamp(),
     },
     { merge: true }
-  );
+  ));
 
   let processed = 0;
   try {
@@ -541,6 +487,7 @@ export const syncSquareHistory = onCall(async (request) => {
           }),
       });
 
+      if (result.truncated) throw new Error("Square history needs a smaller date range.");
       for (const payment of result.payments) {
         const transaction = normalizeSquarePaymentToTransaction({
           payment,
@@ -552,14 +499,15 @@ export const syncSquareHistory = onCall(async (request) => {
           transaction,
           syncSource: "historical_backfill",
           rebuildDemand: false,
+          lease,
+          timezone: location.timezone || "Europe/London",
         });
         if (ingestResult.status === "processed") processed += 1;
       }
     }
 
-    await Promise.all([
-      rebuildPosDemandModel(businessId),
-      getConnectionRef(businessId).set(
+    await rebuildPosDemandModel(businessId, lease);
+    await lifecycle.guarded(lease, (tx) => tx.set(getConnectionRef(businessId),
         {
           connectionStatus: POS_CONNECTION_STATUSES.CONNECTED,
           lastSuccessfulSyncAt: FieldValue.serverTimestamp(),
@@ -567,144 +515,63 @@ export const syncSquareHistory = onCall(async (request) => {
           updatedAt: FieldValue.serverTimestamp(),
         },
         { merge: true }
-      ),
-    ]);
-  } catch (error) {
+      ));
+  } catch {
     console.warn("Square historical sync failed", {
       businessId,
       provider: POS_PROVIDERS.SQUARE,
-      message: error.message,
     });
-    await getConnectionRef(businessId).set(
+    await lifecycle.guarded(lease, (tx) => tx.set(getConnectionRef(businessId),
       {
         connectionStatus: POS_CONNECTION_STATUSES.PROBLEM,
         lastSyncError: "Square sync could not finish.",
         updatedAt: FieldValue.serverTimestamp(),
       },
       { merge: true }
-    );
+    ));
     throw new HttpsError("unavailable", "Square sync could not finish.");
   }
 
   return { processed, days: window.days };
+  });
 });
 
-export const squareWebhook = onRequest(async (req, res) => {
-  const startedAt = Date.now();
-
+export const squareWebhook = onRequest({ ...squareOptions,
+  secrets: [...squareOptions.secrets, webhookSignatureKey],
+}, async (req, res) => {
+  if (req.method !== "POST") { res.status(405).end(); return; }
   try {
     requireSquareEnabled();
     const config = getSquareConfig();
-
-    if (!config.webhookSignatureKey || !config.webhookNotificationUrl) {
-      res.status(503).json({ ok: false });
-      return;
-    }
-
-    const rawBody = req.rawBody || Buffer.from(JSON.stringify(req.body || {}));
-    const signature = req.get("x-square-hmacsha256-signature");
-    const validSignature = verifySquareWebhookSignature({
-      notificationUrl: config.webhookNotificationUrl,
-      rawBody,
-      signatureKey: config.webhookSignatureKey,
-      signatureHeader: signature,
-    });
-
-    if (!validSignature) {
-      res.status(403).json({ ok: false });
-      return;
-    }
-
-    const event =
-      typeof req.body === "object" && req.body
-        ? req.body
-        : JSON.parse(rawBody.toString("utf8"));
-    const merchantId = event.merchant_id || event.merchantId || "";
-    const eventId = event.event_id || event.id || "";
+    if (!config.webhookSignatureKey || !config.webhookNotificationUrl) { res.status(503).json({ ok: false }); return; }
+    const rawBody = req.rawBody;
+    if (!Buffer.isBuffer(rawBody) || !verifySquareWebhookSignature({
+      notificationUrl: config.webhookNotificationUrl, rawBody, signatureKey: config.webhookSignatureKey,
+      signatureHeader: req.get("x-square-hmacsha256-signature"),
+    })) { res.status(403).json({ ok: false }); return; }
+    const event = JSON.parse(rawBody.toString("utf8"));
     const paymentId = getSquarePaymentIdFromWebhook(event);
-
-    if (!merchantId || !paymentId || !eventId) {
-      res.status(202).json({ ok: true, ignored: true });
-      return;
-    }
-
-    const mappingSnap = await getMerchantMappingRef(
-      POS_PROVIDERS.SQUARE,
-      merchantId
-    ).get();
-    const mapping = mappingSnap.data();
-    if (
-      !mapping ||
-      mapping.connectionStatus === POS_CONNECTION_STATUSES.DISCONNECTED
-    ) {
-      res.status(202).json({ ok: true, ignored: true });
-      return;
-    }
-
-    const eventRef = db.doc(`posWebhookEvents/${POS_PROVIDERS.SQUARE}_${eventId}`);
-    const created = await db.runTransaction(async (firestoreTx) => {
-      const existing = await firestoreTx.get(eventRef);
-      if (existing.exists) return false;
-      firestoreTx.create(eventRef, {
-        provider: POS_PROVIDERS.SQUARE,
-        eventId,
-        merchantId,
-        businessId: mapping.businessId,
-        eventType: event.type || "",
-        createdAt: FieldValue.serverTimestamp(),
-      });
-      return true;
-    });
-
-    if (!created) {
-      res.status(200).json({ ok: true, duplicate: true });
-      return;
-    }
-
-    const secret = await getSquareSecret(mapping.businessId);
-    const payment = await getSquarePayment({
-      accessToken: secret.accessToken,
-      environment: secret.environment,
-      paymentId,
-    });
-    const locationMapping = (mapping.connectedLocations || []).find(
-      (location) => location.squareLocationId === payment.location_id
-    );
-    const transaction = normalizeSquarePaymentToTransaction({
-      payment,
-      businessId: mapping.businessId,
-      scheduleLoopLocationId: locationMapping?.scheduleLoopLocationId || "default",
-      squareMerchantId: merchantId,
-    });
-
-    await ingestNormalisedTransaction({
-      transaction,
-      syncSource: "square_webhook",
-    });
-    await getConnectionRef(mapping.businessId).set(
-      {
-        lastWebhookAt: FieldValue.serverTimestamp(),
-        lastWebhookEventType: event.type || "",
-        updatedAt: FieldValue.serverTimestamp(),
+    if (!event.merchant_id || !event.event_id || !paymentId) { res.status(202).json({ ok: true, ignored: true }); return; }
+    const merchantId = sanitizeBusinessId(event.merchant_id);
+    const mapping = (await getMerchantMappingRef(POS_PROVIDERS.SQUARE, merchantId).get()).data();
+    if (!mapping || mapping.connectionStatus !== "connected") { res.status(202).json({ ok: true, ignored: true }); return; }
+    const result = await lifecycle.withLease(mapping.businessId, (lease) => lifecycle.processEvent(lease, {
+      merchantId, eventId: event.event_id, eventType: event.type,
+      process: async () => {
+        const secret = await lifecycle.getSecret(lease, config, refreshSquareAccessToken);
+        if (secret.externalMerchantId !== merchantId) throw new Error("Square merchant mismatch.");
+        const payment = await getSquarePayment({ accessToken: secret.accessToken, environment: secret.environment, paymentId });
+        const location = (mapping.connectedLocations || []).find(item => item.squareLocationId === payment.location_id);
+        if (!location) throw new Error("Square location is not connected.");
+        const transaction = normalizeSquarePaymentToTransaction({ payment, businessId: mapping.businessId,
+          scheduleLoopLocationId: location.scheduleLoopLocationId, squareMerchantId: merchantId });
+        await ingestNormalisedTransaction({ transaction, syncSource: "square_webhook", lease, timezone: location.timezone || "Europe/London" });
       },
-      { merge: true }
-    );
-
-    console.info("Square webhook processed", {
-      provider: POS_PROVIDERS.SQUARE,
-      businessId: mapping.businessId,
-      eventType: event.type || "",
-      eventId,
-      durationMs: Date.now() - startedAt,
-    });
-
-    res.status(200).json({ ok: true });
-  } catch (error) {
-    console.error("Square webhook processing failed", {
-      provider: POS_PROVIDERS.SQUARE,
-      message: error.message,
-      durationMs: Date.now() - startedAt,
-    });
-    res.status(500).json({ ok: false });
+    }));
+    res.status(200).json({ ok: true, ...result });
+  } catch {
+    // Do not include provider response bodies, request URLs, codes or tokens.
+    console.error("Square webhook processing failed", { provider: POS_PROVIDERS.SQUARE });
+    res.status(503).json({ ok: false });
   }
 });

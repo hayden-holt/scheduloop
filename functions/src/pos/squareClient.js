@@ -42,10 +42,12 @@ export async function squareApiFetch({
   environment,
   method = "GET",
   body,
+  clientAuthorization,
 }) {
   const response = await fetch(`${getSquareBaseUrl(environment)}${path}`, {
     method,
-    headers: createSquareHeaders(accessToken),
+    headers: { ...createSquareHeaders(accessToken), ...(clientAuthorization ? { Authorization: `Client ${clientAuthorization}` } : {}) },
+    signal: AbortSignal.timeout(20_000),
     body: body ? JSON.stringify(body) : undefined,
   });
 
@@ -92,23 +94,13 @@ export async function refreshSquareAccessToken({
   });
 }
 
-export async function revokeSquareAccessToken({
-  accessToken,
-  clientId,
-  clientSecret,
-  environment,
-}) {
-  return squareApiFetch({
-    path: "/oauth2/revoke",
-    accessToken,
-    environment,
-    method: "POST",
-    body: {
-      client_id: clientId,
-      client_secret: clientSecret,
-      access_token: accessToken,
-    },
+export async function revokeSquareAccessToken({ accessToken, clientId, clientSecret, environment, onlyAccessToken = false }) {
+  const result = await squareApiFetch({ path: "/oauth2/revoke", environment, method: "POST",
+    clientAuthorization: clientSecret,
+    body: { client_id: clientId, access_token: accessToken, revoke_only_access_token: onlyAccessToken },
   });
+  if (result.success !== true) throw new Error("Square token revocation was not confirmed.");
+  return result;
 }
 
 export async function listSquareLocations({ accessToken, environment }) {
@@ -151,8 +143,8 @@ export async function collectSquarePayments({
     });
 
     payments.push(...(result.payments || []));
-    if (!result.cursor) break;
-    cursor = result.cursor;
+    cursor = result.cursor || "";
+    if (!cursor) break;
   }
 
   return {

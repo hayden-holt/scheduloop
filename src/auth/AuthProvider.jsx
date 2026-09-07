@@ -43,6 +43,15 @@ function clearStoredEmailForSignIn() {
   window.localStorage.removeItem(EMAIL_LINK_STORAGE_KEY);
 }
 
+function AuthLoadingScreen() {
+  return (
+    <div className="app route-loading-screen" aria-live="polite" aria-label="Loading">
+      <div className="route-loading-spinner" />
+      <p className="route-loading-text">Loading ScheduleLoop...</p>
+    </div>
+  );
+}
+
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -122,7 +131,7 @@ export function AuthProvider({ children }) {
 
   return (
     <AuthContext.Provider value={value}>
-      {loading ? null : children}
+      {loading ? <AuthLoadingScreen /> : children}
     </AuthContext.Provider>
   );
 }

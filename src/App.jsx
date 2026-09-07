@@ -36,7 +36,7 @@ function RouteError({ message }) {
   );
 }
 
-function RouteFallback({ message = "Loading Scheduloop..." }) {
+function RouteFallback({ message = "Loading ScheduleLoop..." }) {
   return (
     <div className="app route-loading-screen" aria-label="Loading">
       <div className="route-loading-spinner" />

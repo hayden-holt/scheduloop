@@ -34,10 +34,11 @@ export function verifySquareWebhookSignature({
 }
 
 export function getSquarePaymentIdFromWebhook(event) {
-  return (
-    event?.data?.object?.payment?.id ||
-    event?.data?.object?.payment_id ||
-    event?.data?.id ||
-    ""
-  );
+  if (["refund.created", "refund.updated"].includes(event?.type)) {
+    return event?.data?.object?.refund?.payment_id || "";
+  }
+  if (["payment.created", "payment.updated"].includes(event?.type)) {
+    return event?.data?.object?.payment?.id || event?.data?.id || "";
+  }
+  return "";
 }

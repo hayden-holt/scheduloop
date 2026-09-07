@@ -183,12 +183,8 @@ service cloud.firestore {
     }
 
     function profileServerManagedFieldsUnchanged() {
-      return (!('posDemand' in request.resource.data)
-          || (('posDemand' in resource.data)
-            && request.resource.data.posDemand == resource.data.posDemand))
-        && (!('posDemandUpdatedAt' in request.resource.data)
-          || (('posDemandUpdatedAt' in resource.data)
-            && request.resource.data.posDemandUpdatedAt == resource.data.posDemandUpdatedAt));
+      return !request.resource.data.diff(resource.data).affectedKeys()
+        .hasAny(['posDemand', 'posDemandUpdatedAt']);
     }
 
     function onboardingIncomplete(data) {

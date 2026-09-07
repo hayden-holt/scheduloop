@@ -12,7 +12,7 @@ function getEncryptionKey(secret) {
   const base64 = Buffer.from(trimmed, "base64");
   if (base64.length === 32) return base64;
 
-  return crypto.createHash("sha256").update(trimmed).digest();
+  throw new Error("Token encryption key must encode exactly 32 random bytes.");
 }
 
 export function encryptSecret(value, secret) {

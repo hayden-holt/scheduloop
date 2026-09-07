@@ -61,7 +61,7 @@ function ForecastFeedbackPanel({
           <h3>Forecast review</h3>
           <p>
             After a shift, record whether one hour felt high, right, or low.
-            Scheduloop uses this gently on similar days.
+            ScheduleLoop uses this gently on similar days.
           </p>
         </div>
         <span className="forecast-feedback-badge">Manager feedback</span>

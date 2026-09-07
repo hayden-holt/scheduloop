@@ -11,9 +11,7 @@ function getInitialTheme() {
     // Theme preference is optional UI state.
   }
 
-  return window.matchMedia?.("(prefers-color-scheme: light)").matches
-    ? "light"
-    : "dark";
+  return "light";
 }
 
 export function ThemeProvider({ children }) {

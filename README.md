@@ -1,6 +1,6 @@
-# Scheduloop
+# ScheduleLoop
 
-Scheduloop is a workforce forecasting app for small businesses. It helps a gym, cafe, restaurant, or similar business turn expected demand into a practical staffing plan across the day.
+ScheduleLoop is a workforce forecasting app for small businesses. It helps a gym, cafe, restaurant, or similar business turn expected demand into a practical staffing plan across the day.
 
 ## Preview
 
@@ -13,7 +13,7 @@ Scheduloop is a workforce forecasting app for small businesses. It helps a gym, 
 
 ## Current MVP
 
-Scheduloop currently includes:
+ScheduleLoop currently includes:
 
 - Firebase passwordless email-link login and membership-gated business profile storage.
 - Guided onboarding for business type, roles, opening hours, and staffing assumptions.
@@ -28,7 +28,7 @@ Scheduloop currently includes:
 
 ## Why I built this
 
-I built Scheduloop to practise building a realistic SaaS-style app rather than another simple to-do list or tutorial project. The idea was to create a tool that a small business manager could use to estimate staffing needs across the day based on demand, opening hours, roles, and uploaded CSV data.
+I built ScheduleLoop to practise building a realistic SaaS-style app rather than another simple to-do list or tutorial project. The idea was to create a tool that a small business manager could use to estimate staffing needs across the day based on demand, opening hours, roles, and uploaded CSV data.
 
 The main focus was not perfect forecasting, but building a clear MVP with authentication, onboarding, stored business profiles, charts, CSV parsing, and manager-friendly recommendations.
 
@@ -71,6 +71,33 @@ If PowerShell blocks `npm` because of execution policy, run the same scripts thr
 ```powershell
 npm.cmd run dev
 ```
+
+## Production Web Deployment
+
+The production app target is `https://app.scheduleloop.co.uk`. The marketing
+site remains separate at `https://scheduleloop.co.uk`.
+
+Use the existing Vite app build and Firebase Hosting configuration:
+
+```bash
+npm run build
+firebase deploy --only hosting
+```
+
+Deploy Firestore rules and Functions from the same app repository when their
+configuration has been reviewed:
+
+```bash
+firebase deploy --only firestore:rules,firestore:indexes,functions
+```
+
+Firebase Hosting already rewrites browser refreshes and direct route requests to
+`/index.html`, so app routes such as `/login`, `/onboarding`, `/rota`,
+`/data-sources` and `/settings` continue to load as client routes.
+
+Production environment values belong in the hosting and Functions runtime, not
+in committed `.env.local` files. Use `.env.production.example` as the release
+checklist.
 
 ## Firebase Environment Variables
 

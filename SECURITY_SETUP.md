@@ -21,8 +21,11 @@ This checklist covers the Firebase Console and deployment steps that cannot be c
 
 1. Go to Authentication > Settings > Authorized domains.
 2. Keep only legitimate ScheduleLoop app domains, local development domains needed for testing, and Firebase-required domains.
-3. Remove unknown or stale domains.
-4. Test a sign-in link from each domain that will be used in production.
+3. Add `app.scheduleloop.co.uk` for production app sign-in links.
+4. Keep `localhost` for local development while developers need it.
+5. Do not use the marketing domain `scheduleloop.co.uk` as the app sign-in origin unless the app is intentionally served there.
+6. Remove unknown or stale domains.
+7. Test a sign-in link from each domain that will be used in production.
 
 ## 4. Configure the email template
 
@@ -92,6 +95,11 @@ VITE_FIREBASE_APPCHECK_RECAPTCHA_SITE_KEY=
 `firebase.json` includes Firebase Hosting headers for CSP, HSTS, frame protection, MIME sniffing, referrer policy and permissions policy. If hosting somewhere else, copy equivalent headers into that platform.
 
 Test sign-in, Firestore reads/writes, charts and App Check after deploying CSP. If reCAPTCHA or Firebase requests fail, adjust the allowlist rather than replacing it with a wildcard.
+
+The intended app hosting target is Firebase Hosting for `scheduloop-96f9a` with
+the custom domain `app.scheduleloop.co.uk`. Add that custom domain in Firebase
+Hosting and use the DNS values Firebase gives you there; the verification TXT
+token is unique and should not be guessed from source code.
 
 ## 9. Environment and secrets
 

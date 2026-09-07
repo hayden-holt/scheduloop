@@ -95,7 +95,7 @@ function StaffBreakdownPanel({ roles, peakStaff, onStaffingChange }) {
     <div className="card staff-panel">
       <h2 className="card-title">Staff role setup</h2>
       <p className="card-subtitle">
-        Set the roles you use on a normal day. Scheduloop scales these up and
+        Set the roles you use on a normal day. ScheduleLoop scales these up and
         down across the day.
       </p>
 
@@ -365,7 +365,7 @@ function StaffBreakdownPanel({ roles, peakStaff, onStaffingChange }) {
         </div>
 
         <p className="staff-add-hint">
-          Scheduloop uses peak cover to scale this role up and down across the
+          ScheduleLoop uses peak cover to scale this role up and down across the
           day.
         </p>
       </div>

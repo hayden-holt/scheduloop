@@ -30,11 +30,11 @@ function getSelectedLabel(options, value) {
 
 function getProfileSaveErrorMessage(error) {
   if (error?.code === "permission-denied") {
-    return "Scheduloop could not save this profile change. Your business data was not changed.";
+    return "ScheduleLoop could not save this profile change. Your business data was not changed.";
   }
 
   if (error?.code === "unavailable") {
-    return "Scheduloop could not reach Firestore. Check your connection and try again.";
+    return "ScheduleLoop could not reach Firestore. Check your connection and try again.";
   }
 
   return "We could not save these settings. Please try again.";
@@ -205,7 +205,7 @@ function SettingsPage() {
       <section className="settings-hero">
         <div>
           <p className="section-kicker">Account and profile</p>
-          <h2>Manage your Scheduloop settings</h2>
+          <h2>Manage your ScheduleLoop settings</h2>
           <p>
             Keep the account and business details behind your forecasts up to
             date. These changes use the same saved profile as onboarding.
@@ -261,7 +261,7 @@ function SettingsPage() {
 
           <InfoCard
             title="Business details"
-            subtitle="These are the basic details Scheduloop shows and saves with your operating profile."
+            subtitle="These are the basic details ScheduleLoop shows and saves with your operating profile."
             className="settings-card"
           >
             <form className="settings-form" onSubmit={handleProfileSave}>

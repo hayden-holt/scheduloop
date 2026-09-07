@@ -5,6 +5,7 @@ export function canManagePosIntegration(membership, businessId) {
     membership &&
       membership.businessId === businessId &&
       membership.status === "active" &&
+      (!("onboardingComplete" in membership) || membership.onboardingComplete === true) &&
       MANAGE_ROLES.has(String(membership.role || "").toLowerCase())
   );
 }
@@ -15,10 +16,14 @@ export function canManageLegacyBusinessProfile({ uid, businessId, profile }) {
       businessId &&
       uid === businessId &&
       profile &&
-      (!profile.ownerUid || profile.ownerUid === uid)
+      profile.ownerUid === uid
   );
 }
 
 export function sanitizeBusinessId(value) {
-  return String(value || "").trim().slice(0, 128);
+  if (typeof value !== "string" || !value || value.length > 128 ||
+      value !== value.trim() || (value.includes("/") || value.includes("\\") || [...value].some(char => char.charCodeAt(0) < 32)) || value === "." || value === "..") {
+    throw new Error("Invalid Square resource identifier.");
+  }
+  return value;
 }

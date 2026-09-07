@@ -34,12 +34,12 @@ const STEP_LABELS = [
   "Review",
 ];
 const STEP_DESCRIPTIONS = [
-  "Set the basics Scheduloop needs before the first forecast.",
-  "Choose the hours Scheduloop should plan and staff around.",
+  "Set the basics ScheduleLoop needs before the first forecast.",
+  "Choose the hours ScheduleLoop should plan and staff around.",
   "Confirm the roles that shape your day-to-day cover.",
   "Set simple guardrails for minimum and peak cover.",
   "Add rough demand patterns so the first plan feels realistic.",
-  "Check the profile before Scheduloop builds the first plan.",
+  "Check the profile before ScheduleLoop builds the first plan.",
 ];
 
 function makeRoleId(name) {
@@ -74,11 +74,11 @@ function createCustomRole(name, color) {
 
 function getProfileSaveErrorMessage(error) {
   if (error?.code === "permission-denied") {
-    return "Scheduloop could not save because database access needs updating for this profile version.";
+    return "ScheduleLoop could not save because database access needs updating for this profile version.";
   }
 
   if (error?.code === "unavailable") {
-    return "Scheduloop could not reach Firestore. Check the connection and try again.";
+    return "ScheduleLoop could not reach Firestore. Check the connection and try again.";
   }
 
   return "We could not save your business profile. Please try again.";
@@ -292,10 +292,10 @@ function OnboardingPage() {
       <div className="auth-card onboarding-card onboarding-card-wide">
         <div className="onboarding-header">
           <div className="onboarding-header-copy">
-            <p className="section-kicker">Scheduloop setup</p>
+            <p className="section-kicker">ScheduleLoop setup</p>
             <h1>Build your first operating profile</h1>
             <p className="subtitle">
-              Tell us how your business usually runs. Scheduloop uses this to
+              Tell us how your business usually runs. ScheduleLoop uses this to
               shape your first forecast before you upload trading history.
             </p>
           </div>
@@ -409,7 +409,7 @@ function OnboardingPage() {
                 <label className="onboarding-field">
                   Business subtype
                   <span className="field-hint">
-                    Helps Scheduloop choose better starting roles.
+                    Helps ScheduleLoop choose better starting roles.
                   </span>
                   <select
                     value={businessSubtype}
@@ -448,7 +448,7 @@ function OnboardingPage() {
               <div className="onboarding-section-header">
                 <h2 className="onboarding-title">Opening hours</h2>
                 <p className="onboarding-text">
-                  Set the trading window Scheduloop should forecast. If weekends
+                  Set the trading window ScheduleLoop should forecast. If weekends
                   run differently, add one simple weekend pattern.
                 </p>
               </div>
@@ -617,7 +617,7 @@ function OnboardingPage() {
                 <h3 className="add-role-title">Add a role</h3>
                 <p className="onboarding-inline-help">
                   Add roles, not employee names. You can schedule people outside
-                  Scheduloop later.
+                  ScheduleLoop later.
                 </p>
                 <div className="add-role-row">
                   <input
@@ -875,7 +875,7 @@ function OnboardingPage() {
               <div className="onboarding-section-header">
                 <h2 className="onboarding-title">Review profile</h2>
                 <p className="onboarding-text">
-                  Here is the operating profile Scheduloop will use to shape
+                  Here is the operating profile ScheduleLoop will use to shape
                   your first staffing plan.
                 </p>
               </div>
