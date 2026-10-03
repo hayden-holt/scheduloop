@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
+import { getRotaMonth, moveRotaDate, readRotaView, summarizeRotaDay } from "../src/rota/monthlyRota.js";
 import {
   getActiveHourWindow,
   generateTimeSlots,
@@ -2023,6 +2024,67 @@ test("Firestore rules deny client-side POS transaction injection", () => {
   assert.match(rules, /allow create, update, delete: if false;/);
   assert.match(rules, /allow read, write: if false;/);
   assert.doesNotMatch(rules, /posTransactions[\s\S]*allow create: if signedIn/);
+});
+
+test("rota calendar covers leap years, all month lengths and Monday-first offsets", () => {
+  for (const [key, length, offset] of [
+    ["2026-02-14", 28, 6], ["2024-02-29", 29, 3],
+    ["2026-04-15", 30, 2], ["2026-10-14", 31, 3],
+  ]) {
+    const month = getRotaMonth(key);
+    assert.equal(month.days.length, length);
+    assert.equal(month.leadingDays, offset);
+    assert.equal(month.days[0].dateKey, key.slice(0, 7) + "-01");
+    assert.equal(month.days.at(-1).dateKey, key.slice(0, 7) + "-" + length);
+    assert.equal(new Set(month.days.map((day) => day.dateKey)).size, length);
+  }
+  const offsets = new Set(Array.from({ length: 12 }, (_, index) =>
+    getRotaMonth(`2026-${String(index + 1).padStart(2, "0")}-01`).leadingDays
+  ));
+  assert.equal(offsets.size, 7);
+  assert.equal(getRotaMonth("2026-12-31").end, "2027-01-01");
+});
+
+test("rota navigation clamps month ends and crosses years and DST in local dates", () => {
+  assert.equal(moveRotaDate("2026-01-31", "month", 1), "2026-02-28");
+  assert.equal(moveRotaDate("2024-01-31", "month", 1), "2024-02-29");
+  assert.equal(moveRotaDate("2026-03-31", "month", -1), "2026-02-28");
+  assert.equal(moveRotaDate("2026-12-14", "month", 1), "2027-01-14");
+  assert.equal(moveRotaDate("2027-01-14", "month", -1), "2026-12-14");
+  assert.equal(moveRotaDate("2026-03-25", "week", 1), "2026-04-01");
+  assert.equal(moveRotaDate("2026-10-28", "week", -1), "2026-10-21");
+  assert.equal(getWeekStartDateKey("2026-10-14"), "2026-10-12");
+  assert.equal(getRotaMonth("2026-11-01").start, "2026-11-01");
+  assert.equal(getWeekStartDateKey("2026-11-01"), "2026-10-26");
+});
+
+test("rota preference safely defaults to week and accepts only saved month", () => {
+  for (const value of [null, "week", "invalid"]) {
+    assert.equal(readRotaView({ getItem: () => value }), "week");
+  }
+  assert.equal(readRotaView({ getItem: () => "month" }), "month");
+  assert.equal(readRotaView({ getItem: () => { throw new Error("blocked"); } }), "week");
+  assert.equal(readRotaView(), "week");
+});
+
+test("monthly summaries preserve shifts and use existing wages, breaks and distinct staff", () => {
+  const shifts = [
+    { employeeId: "a", roleId: "floor", date: "2026-10-14", startTime: "09:00", endTime: "13:00", breakMinutes: 30 },
+    { employeeId: "a", roleId: "floor", date: "2026-10-14", startTime: "14:00", endTime: "16:00", breakMinutes: 0 },
+    { employeeId: "b", roleId: "floor", date: "2026-10-14", startTime: "09:00", endTime: "17:00", breakMinutes: 60 },
+  ];
+  const employees = [{ id: "a", hourlyRate: 12 }, { id: "b", active: false }];
+  const roles = [{ id: "floor", hourlyWage: 10 }];
+  const before = JSON.stringify({ shifts, employees, roles });
+  const summary = summarizeRotaDay({ shifts, employees, roles, averageHourlyWage: 9 });
+  assert.deepEqual(summary, { staffCount: 2, shiftCount: 3, labourCost: 136 });
+  assert.equal(summary.labourCost, calculateWeeklyRotaTotals({ shifts, employees, roles, averageHourlyWage: 9 }).weeklyCost);
+  assert.equal(JSON.stringify({ shifts, employees, roles }), before);
+  assert.equal(summarizeRotaDay({ shifts, employees, roles: [], averageHourlyWage: 9 }).labourCost, 129);
+  assert.equal(summarizeRotaDay({ shifts, employees, roles: [] }).labourCost, null);
+  assert.deepEqual(summarizeRotaDay({}), { staffCount: 0, shiftCount: 0, labourCost: 0 });
+  const busy = Array.from({ length: 100 }, (_, i) => ({ ...shifts[0], employeeId: String(i % 20) }));
+  assert.deepEqual(summarizeRotaDay({ shifts: busy, roles }), { staffCount: 20, shiftCount: 100, labourCost: 3500 });
 });
 
 let failed = 0;

@@ -1,12 +1,10 @@
 import InfoCard from "../components/InfoCard";
 import { formatCurrencyGBP } from "../utils/labourCost";
 import {
-  addDaysToDateKey,
   COVERAGE_STATUS,
   formatCoverageValue,
   getCoverageSummary,
   getWeekRangeLabel,
-  getWeekStartDateKey,
   normalizeBreakMinutes,
   ROTA_STATUS,
 } from "../utils/rota";
@@ -44,35 +42,40 @@ export function RotaStatusControl({ status, disabled, onChange }) {
   );
 }
 
-export function WeekSelector({ weekStart, onChange }) {
+export function WeekSelector({ view, disabled, onPrevious, onNext, onToday }) {
   return (
-    <div className="week-selector" aria-label="Week selector">
+    <div className="week-selector" aria-label="Rota period">
       <button
         type="button"
         className="secondary-button"
-        onClick={() => onChange(addDaysToDateKey(weekStart, -7))}
+        disabled={disabled}
+        onClick={onPrevious}
       >
-        Previous week
+        Previous {view}
       </button>
       <button
         type="button"
         className="secondary-button"
-        onClick={() => onChange(getWeekStartDateKey())}
+        disabled={disabled}
+        onClick={onToday}
       >
-        Current week
+        Today
       </button>
       <button
         type="button"
         className="secondary-button"
-        onClick={() => onChange(addDaysToDateKey(weekStart, 7))}
+        disabled={disabled}
+        onClick={onNext}
       >
-        Next week
+        Next {view}
       </button>
     </div>
   );
 }
 
 export function RotaHeader({
+  view,
+  monthLabel,
   weekStart,
   weekStatus,
   saving,
@@ -86,70 +89,112 @@ export function RotaHeader({
     <section className="rota-hero">
       <div>
         <p className="section-kicker">Rota</p>
-        <h2>Week of {getWeekRangeLabel(weekStart)}</h2>
+        <h2 aria-live="polite">
+          {view === "month"
+            ? monthLabel
+            : `Week of ${getWeekRangeLabel(weekStart)}`}
+        </h2>
         <p>
-          Build the weekly schedule, then compare planned cover with the
-          ScheduleLoop forecast.
+          {view === "month"
+            ? "Plan the month at a glance. Open any day to manage its weekly rota."
+            : "Build the weekly schedule, then compare planned cover with the ScheduleLoop forecast."}
         </p>
         {shareMessage && <p className="rota-share-message">{shareMessage}</p>}
       </div>
-      <div className="rota-hero-actions">
-        <div className="rota-share-actions">
-          <button type="button" className="secondary-button" onClick={onPrint}>
-            Print
-          </button>
-          <button
-            type="button"
-            className="secondary-button"
-            onClick={onCopySummary}
-          >
-            Copy summary
-          </button>
+      {view === "week" && (
+        <div className="rota-hero-actions">
+          <div className="rota-share-actions">
+            <button
+              type="button"
+              className="secondary-button"
+              disabled={loading}
+              onClick={onPrint}
+            >
+              Print
+            </button>
+            <button
+              type="button"
+              className="secondary-button"
+              onClick={onCopySummary}
+              disabled={loading}
+            >
+              Copy summary
+            </button>
+          </div>
+          <RotaStatusControl
+            status={weekStatus}
+            disabled={saving || loading}
+            onChange={onStatusChange}
+          />
         </div>
-        <RotaStatusControl
-          status={weekStatus}
-          disabled={saving || loading}
-          onChange={onStatusChange}
-        />
-      </div>
+      )}
     </section>
   );
 }
 
 export function RotaToolbar({
-  weekStart,
+  view,
+  onViewChange,
+  onPrevious,
+  onNext,
+  onToday,
   saving,
   loading,
   canAddShift,
-  onWeekChange,
   onCopyPreviousWeek,
   onAddShift,
   onManageEmployees,
 }) {
   return (
     <section className="rota-toolbar">
-      <WeekSelector weekStart={weekStart} onChange={onWeekChange} />
+      <div className="rota-period-controls">
+        <div className="rota-view-toggle" role="group" aria-label="Rota view">
+          {["week", "month"].map((option) => (
+            <button
+              key={option}
+              type="button"
+              aria-pressed={view === option}
+              disabled={saving}
+              onClick={() => onViewChange(option)}
+            >
+              {option === "week" ? "Week" : "Month"}
+            </button>
+          ))}
+        </div>
+        <WeekSelector
+          view={view}
+          disabled={saving}
+          onPrevious={onPrevious}
+          onNext={onNext}
+          onToday={onToday}
+        />
+      </div>
       <div className="rota-toolbar-actions">
-        <button
-          type="button"
-          className="secondary-button"
-          disabled={saving || loading}
-          onClick={onCopyPreviousWeek}
-        >
-          Copy previous week
-        </button>
-        <button
-          type="button"
-          className="primary-action-button"
-          disabled={!canAddShift || saving}
-          onClick={onAddShift}
-        >
-          Add shift
-        </button>
+        {view === "week" && (
+          <>
+            <button
+              type="button"
+              className="secondary-button"
+              disabled={saving || loading}
+              onClick={onCopyPreviousWeek}
+            >
+              Copy previous week
+            </button>
+            <button
+              type="button"
+              className="primary-action-button"
+              disabled={!canAddShift || saving || loading}
+              onClick={onAddShift}
+            >
+              Add shift
+            </button>
+          </>
+        )}
         <button
           type="button"
           className="secondary-button"
           onClick={onManageEmployees}
+          disabled={loading || saving}
         >
           Manage employees
         </button>

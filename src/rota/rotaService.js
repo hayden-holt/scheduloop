@@ -114,11 +114,15 @@ export async function deactivateEmployee(businessId, employeeId) {
 
 export async function loadWeekShifts(businessId, weekStartKey) {
   const weekEndKey = addDaysToDateKey(weekStartKey, 7);
+  return loadPeriodShifts(businessId, weekStartKey, weekEndKey);
+}
+
+export async function loadPeriodShifts(businessId, startKey, endKey) {
   const snapshot = await getDocs(
     query(
       profileCollection(businessId, "shifts"),
-      where("date", ">=", weekStartKey),
-      where("date", "<", weekEndKey)
+      where("date", ">=", startKey),
+      where("date", "<", endKey)
     )
   );
 

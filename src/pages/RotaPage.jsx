@@ -10,7 +10,10 @@ import {
   normalizeOpeningHours,
 } from "../utils/businessProfileSetup";
 import { isCurrentCsvDemandModel } from "../utils/demandModel";
-import { buildForecastChartData, buildPresetShape } from "../utils/forecastChartData";
+import {
+  buildForecastChartData,
+  buildPresetShape,
+} from "../utils/forecastChartData";
 import {
   addDaysToDateKey,
   analyseCopyPreviousWeek,
@@ -33,6 +36,7 @@ import {
   deactivateEmployee,
   deleteShift,
   loadEmployees,
+  loadPeriodShifts,
   loadRotaWeek,
   loadWeekShifts,
   replaceWeekShiftsAsDraft,
@@ -56,6 +60,13 @@ import {
   createEmptyShift,
   getVisibleEmployees,
 } from "../rota/rotaViewHelpers";
+import RotaMonth from "../rota/RotaMonth";
+import {
+  getRotaMonth,
+  moveRotaDate,
+  readRotaView,
+  ROTA_VIEW_KEY,
+} from "../rota/monthlyRota";
 
 function RotaPage() {
   const { profile, businessId } = useBusinessProfile();
@@ -73,19 +84,35 @@ function RotaPage() {
     [profile?.hours]
   );
   const presetShape = useMemo(() => buildPresetShape(roles), [roles]);
-  const [weekStart, setWeekStart] = useState(() =>
-    getWeekStartDateKey(toLocalDateKey(new Date()))
+  const [view, setView] = useState(() => {
+    try {
+      return readRotaView(window.localStorage);
+    } catch {
+      return "week";
+    }
+  });
+  const [selectedCoverageDate, setSelectedCoverageDate] = useState(() =>
+    toLocalDateKey(new Date())
   );
+  const weekStart = getWeekStartDateKey(selectedCoverageDate);
   const weekDays = useMemo(() => getWeekDays(weekStart), [weekStart]);
-  const [selectedCoverageDate, setSelectedCoverageDate] = useState(
-    weekDays[0].dateKey
-  );
+  const monthKey = selectedCoverageDate.slice(0, 7);
+  const month = useMemo(() => getRotaMonth(`${monthKey}-01`), [monthKey]);
+  const periodDays = view === "month" ? month.days : weekDays;
+  const periodStart = view === "month" ? month.start : weekStart;
+  const periodEnd =
+    view === "month" ? month.end : addDaysToDateKey(weekStart, 7);
+  const periodKey = `${businessId}:${view}:${periodStart}:${periodEnd}`;
   const [employees, setEmployees] = useState([]);
   const [shifts, setShifts] = useState([]);
   const [weekStatus, setWeekStatus] = useState(ROTA_STATUS.draft);
-  const [loading, setLoading] = useState(true);
+  const [fetching, setLoading] = useState(true);
+  const [loadedPeriod, setLoadedPeriod] = useState("");
+  const loading = fetching || loadedPeriod !== periodKey;
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [loadError, setLoadError] = useState("");
+  const [reloadCount, setReloadCount] = useState(0);
   const [shareMessage, setShareMessage] = useState("");
   const [employeeManagerOpen, setEmployeeManagerOpen] = useState(false);
   const [employeeForm, setEmployeeForm] = useState(null);
@@ -101,44 +128,59 @@ function RotaPage() {
     report: "",
   });
 
-  useEffect(() => {
-    setSelectedCoverageDate((current) =>
-      weekDays.some((day) => day.dateKey === current)
-        ? current
-        : weekDays[0].dateKey
-    );
-  }, [weekDays]);
+  const changeView = (nextView) => {
+    setView(nextView);
+    setShareMessage("");
+    try {
+      window.localStorage.setItem(ROTA_VIEW_KEY, nextView);
+    } catch {
+      /* Preferences are optional. */
+    }
+  };
+
+  const openDay = (date) => {
+    setSelectedCoverageDate(date);
+    changeView("week");
+  };
 
   useEffect(() => {
     let active = true;
 
     async function loadRota() {
       if (!businessId) {
+        setEmployees([]);
+        setShifts([]);
+        setLoadedPeriod(periodKey);
         setLoading(false);
         return;
       }
 
       setLoading(true);
       setError("");
+      setLoadError("");
 
       try {
         const [nextEmployees, nextShifts, nextWeek] = await Promise.all([
           loadEmployees(businessId),
-          loadWeekShifts(businessId, weekStart),
-          loadRotaWeek(businessId, weekStart),
+          loadPeriodShifts(businessId, periodStart, periodEnd),
+          view === "week" ? loadRotaWeek(businessId, periodStart) : null,
         ]);
 
         if (!active) return;
         setEmployees(nextEmployees);
         setShifts(nextShifts);
-        setWeekStatus(nextWeek.status);
+        setWeekStatus(nextWeek?.status || ROTA_STATUS.draft);
       } catch (err) {
         console.error("Failed to load rota", err);
         if (active) {
-          setError("The rota could not be loaded. Please try again.");
+          setShifts([]);
+          setLoadError("The rota could not be loaded. Please try again.");
         }
       } finally {
-        if (active) setLoading(false);
+        if (active) {
+          setLoadedPeriod(periodKey);
+          setLoading(false);
+        }
       }
     }
 
@@ -147,7 +189,7 @@ function RotaPage() {
     return () => {
       active = false;
     };
-  }, [businessId, weekStart]);
+  }, [businessId, periodStart, periodEnd, periodKey, view, reloadCount]);
 
   const visibleEmployees = useMemo(
     () => getVisibleEmployees(employees, shifts),
@@ -173,7 +215,7 @@ function RotaPage() {
     const staffingFeedback = getStaffingFeedback(profile);
 
     return Object.fromEntries(
-      weekDays.map((day) => {
+      periodDays.map((day) => {
         const openingHours = getOpeningHoursForDate(profileHours, day.dateKey);
         return [
           day.dateKey,
@@ -193,7 +235,7 @@ function RotaPage() {
         ];
       })
     );
-  }, [profile, profileHours, operatingRules, presetShape, roles, weekDays]);
+  }, [profile, profileHours, operatingRules, presetShape, roles, periodDays]);
   const totals = useMemo(
     () =>
       calculateWeeklyRotaTotals({
@@ -208,7 +250,7 @@ function RotaPage() {
   const coverageByDate = useMemo(
     () =>
       Object.fromEntries(
-        weekDays.map((day) => [
+        periodDays.map((day) => [
           day.dateKey,
           calculateCoverageForDay({
             forecastPoints: forecastByDate[day.dateKey] || [],
@@ -218,7 +260,13 @@ function RotaPage() {
           }),
         ])
       ),
-    [forecastByDate, shiftsByDate, roles, operatingRules.intervalMinutes, weekDays]
+    [
+      forecastByDate,
+      shiftsByDate,
+      roles,
+      operatingRules.intervalMinutes,
+      periodDays,
+    ]
   );
   const selectedDay =
     weekDays.find((day) => day.dateKey === selectedCoverageDate) || weekDays[0];
@@ -561,10 +609,12 @@ function RotaPage() {
   return (
     <main className="rota-page">
       <RotaHeader
+        view={view}
+        monthLabel={month.label}
         weekStart={weekStart}
         weekStatus={weekStatus}
         saving={saving}
-        loading={loading}
+        loading={loading || !!loadError}
         shareMessage={shareMessage}
         onStatusChange={handleStatusChange}
         onPrint={handlePrintRota}
@@ -572,51 +622,102 @@ function RotaPage() {
       />
 
       <RotaToolbar
-        weekStart={weekStart}
+        view={view}
+        onViewChange={changeView}
+        onPrevious={() =>
+          setSelectedCoverageDate(moveRotaDate(selectedCoverageDate, view, -1))
+        }
+        onNext={() =>
+          setSelectedCoverageDate(moveRotaDate(selectedCoverageDate, view, 1))
+        }
+        onToday={() => setSelectedCoverageDate(toLocalDateKey(new Date()))}
         saving={saving}
-        loading={loading}
+        loading={loading || !!loadError}
         canAddShift={activeEmployees.length > 0}
-        onWeekChange={setWeekStart}
         onCopyPreviousWeek={handleOpenCopyPreviousWeek}
         onAddShift={() => handleStartShiftForDate(selectedCoverageDate)}
         onManageEmployees={() => openEmployeeManager()}
       />
 
       {error && <div className="banner banner-error">{error}</div>}
+      {loadError && !loading && (
+        <div className="banner banner-error" role="alert">
+          {loadError}{" "}
+          <button
+            type="button"
+            className="secondary-button"
+            onClick={() => setReloadCount((count) => count + 1)}
+          >
+            Retry
+          </button>
+        </div>
+      )}
 
-      <RotaSummaryStrip
-        totals={totals}
-        shifts={shifts}
-        visibleEmployees={visibleEmployees}
-        coverageByDate={coverageByDate}
-        weekStatus={weekStatus}
-      />
+      {view === "month" ? (
+        loading ? (
+          <div className="rota-empty-state" role="status">
+            <h3>Loading rota</h3>
+            <p>Fetching employees and shifts for this month.</p>
+          </div>
+        ) : (
+          !loadError && (
+            <RotaMonth
+              month={month}
+              shiftsByDate={shiftsByDate}
+              employees={employees}
+              roles={roles}
+              averageHourlyWage={operatingRules.averageHourlyWage}
+              coverageByDate={coverageByDate}
+              selectedDate={selectedCoverageDate}
+              onOpenDay={openDay}
+            />
+          )
+        )
+      ) : (
+        <>
+          {!loading && !loadError && (
+            <RotaSummaryStrip
+              totals={totals}
+              shifts={shifts}
+              visibleEmployees={visibleEmployees}
+              coverageByDate={coverageByDate}
+              weekStatus={weekStatus}
+            />
+          )}
 
-      <RotaGrid
-        loading={loading}
-        visibleEmployees={visibleEmployees}
-        weekDays={weekDays}
-        shifts={shifts}
-        roles={roles}
-        dailyHours={totals.dailyHours}
-        employeeHours={totals.employeeHours}
-        selectedDate={selectedCoverageDate}
-        canAddShift={activeEmployees.length > 0 && !saving}
-        onSelectDate={setSelectedCoverageDate}
-        onAddEmployee={() => openEmployeeManager(createEmptyEmployee(roles))}
-        onAddShift={handleStartShiftForDate}
-        onEditShift={setShiftForm}
-      />
+          {!loadError && (
+            <RotaGrid
+              loading={loading}
+              visibleEmployees={visibleEmployees}
+              weekDays={weekDays}
+              shifts={shifts}
+              roles={roles}
+              dailyHours={totals.dailyHours}
+              employeeHours={totals.employeeHours}
+              selectedDate={selectedCoverageDate}
+              canAddShift={activeEmployees.length > 0 && !saving}
+              onSelectDate={setSelectedCoverageDate}
+              onAddEmployee={() =>
+                openEmployeeManager(createEmptyEmployee(roles))
+              }
+              onAddShift={handleStartShiftForDate}
+              onEditShift={setShiftForm}
+            />
+          )}
 
-      <CoveragePanel
-        weekDays={weekDays}
-        coverageByDate={coverageByDate}
-        selectedDay={selectedDay}
-        selectedDate={selectedCoverageDate}
-        rows={selectedCoverageRows}
-        summary={selectedCoverageSummary}
-        onSelectDate={setSelectedCoverageDate}
-      />
+          {!loading && !loadError && (
+            <CoveragePanel
+              weekDays={weekDays}
+              coverageByDate={coverageByDate}
+              selectedDay={selectedDay}
+              selectedDate={selectedCoverageDate}
+              rows={selectedCoverageRows}
+              summary={selectedCoverageSummary}
+              onSelectDate={setSelectedCoverageDate}
+            />
+          )}
+        </>
+      )}
 
       <EmployeeManagerDialog
         open={employeeManagerOpen}
@@ -678,18 +779,20 @@ function RotaPage() {
         }
       />
 
-      <PrintableRota
-        businessName={basics.businessName}
-        location={basics.location}
-        weekStart={weekStart}
-        weekStatus={weekStatus}
-        weekDays={weekDays}
-        shifts={shifts}
-        employees={visibleEmployees}
-        roles={roles}
-        employeeHours={totals.employeeHours}
-        weeklyHours={totals.weeklyHours}
-      />
+      {view === "week" && !loading && !loadError && (
+        <PrintableRota
+          businessName={basics.businessName}
+          location={basics.location}
+          weekStart={weekStart}
+          weekStatus={weekStatus}
+          weekDays={weekDays}
+          shifts={shifts}
+          employees={visibleEmployees}
+          roles={roles}
+          employeeHours={totals.employeeHours}
+          weeklyHours={totals.weeklyHours}
+        />
+      )}
     </main>
   );
 }
