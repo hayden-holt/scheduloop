@@ -6,6 +6,10 @@ import { HOURS, getWeekdayFromDateKey } from "./schedule.js";
 import { normalizePositiveNumber, normalizeStaffCount } from "./staffing.js";
 
 export const BUSINESS_SUBTYPES = {
+  retail: [
+    { value: "retailStore", label: "Retail store / shop" },
+    { value: "otherBusiness", label: "Other staff-based business" },
+  ],
   cafe: [
     { value: "coffeeShop", label: "Coffee shop" },
     { value: "takeaway", label: "Takeaway" },
@@ -55,6 +59,11 @@ export function getBusinessRhythmForCustomerPattern(customerPattern) {
 }
 
 const DEMAND_UNITS = {
+  retail: [
+    { value: "customers", label: "Customers" },
+    { value: "transactions", label: "Transactions" },
+    { value: "bookings", label: "Bookings / appointments" },
+  ],
   cafe: [
     { value: "orders", label: "Orders" },
     { value: "covers", label: "Covers" },
@@ -66,6 +75,7 @@ const DEMAND_UNITS = {
 };
 
 const ROLE_DESCRIPTIONS = {
+  teamMember: "Serves customers and handles day-to-day tasks.",
   barista: "Handles drinks, counter service, and quick customer flow.",
   kitchen: "Prepares food and keeps service moving during peaks.",
   wait: "Looks after tables, floor service, and customer handover.",
@@ -82,6 +92,9 @@ const DEFAULT_ROLE_COLORS = {
 };
 
 const DEFAULT_PEAK_STAFF_BY_PROFILE = {
+  retail: {
+    default: { teamMember: 2, manager: 1 },
+  },
   cafe: {
     default: { barista: 2, kitchen: 1, wait: 1 },
     coffeeShop: { barista: 3, kitchen: 1, wait: 1 },
@@ -161,7 +174,10 @@ export function getDemandUnitLabel(businessType, unit) {
 }
 
 export function normalizeBusinessProfileBasics(profile = {}) {
-  const businessType = profile.businessType === "cafe" ? "cafe" : "gym";
+  // Keep legacy gym profiles and the existing fallback while accepting retail.
+  const businessType = ["cafe", "gym", "retail"].includes(profile.businessType)
+    ? profile.businessType
+    : "gym";
   const subtypeOptions = getBusinessSubtypeOptions(businessType);
   const businessSubtype = subtypeOptions.some(
     (option) => option.value === profile.businessSubtype
@@ -272,7 +288,7 @@ export function getDefaultRolesForBusinessProfile({
         })
       );
     }
-  } else {
+  } else if (businessType === "gym") {
     roles = roles.map((role) => {
       if (role.id === "classes" && businessSubtype === "ptStudio") {
         return { ...role, minStaff: 0, requiredDuringOpen: false };

@@ -47,6 +47,7 @@ function makeRoleId(name) {
 }
 
 function getBusinessTypeLabel(businessType) {
+  if (businessType === "retail") return "Retail / Other Business";
   return businessType === "cafe" ? "Cafe / Restaurant" : "Gym / Fitness";
 }
 
@@ -88,7 +89,10 @@ function OnboardingPage() {
   const navigate = useNavigate();
   const { profile, saveProfile, completeOnboarding, needsOnboarding } =
     useBusinessProfile();
-  const initialBasics = normalizeBusinessProfileBasics(profile || {});
+  const initialBasics = normalizeBusinessProfileBasics({
+    businessType: "retail",
+    ...(profile || {}),
+  });
   const initialOpeningHours = normalizeOpeningHours(profile?.hours);
   const initialDemandEstimates = normalizeDemandEstimates(
     profile?.demandEstimates,
@@ -391,18 +395,34 @@ function OnboardingPage() {
 
                 <button
                   type="button"
-                  onClick={() => handleBusinessTypeSelect("gym")}
+                  onClick={() => handleBusinessTypeSelect("retail")}
                   className={
                     "business-type-card" +
-                    (businessType === "gym" ? " selected" : "")
+                    (businessType === "retail" ? " selected" : "")
                   }
                 >
-                  <span className="business-type-eyebrow">Fitness</span>
-                  <span className="business-type-title">Gym / Fitness</span>
+                  <span className="business-type-eyebrow">Retail and services</span>
+                  <span className="business-type-title">Retail / Other Business</span>
                   <span className="business-type-sub">
-                    Built around check-ins, classes, PT sessions, and reception.
+                    For shops, builders merchants, salons, and other staff-based businesses.
                   </span>
                 </button>
+                {profile?.businessType === "gym" && (
+                  <button
+                    type="button"
+                    onClick={() => handleBusinessTypeSelect("gym")}
+                    className={
+                      "business-type-card" +
+                      (businessType === "gym" ? " selected" : "")
+                    }
+                  >
+                    <span className="business-type-eyebrow">Fitness</span>
+                    <span className="business-type-title">Gym / Fitness</span>
+                    <span className="business-type-sub">
+                      Built around check-ins, classes, PT sessions, and reception.
+                    </span>
+                  </button>
+                )}
               </div>
 
               <div className="onboarding-field-grid">
@@ -623,7 +643,9 @@ function OnboardingPage() {
                   <input
                     type="text"
                     placeholder={
-                      businessType === "gym" ? "e.g. Lifeguard" : "e.g. Porter"
+                      businessType === "retail"
+                        ? "e.g. Sales Assistant"
+                        : businessType === "gym" ? "e.g. Lifeguard" : "e.g. Porter"
                     }
                     value={newRoleName}
                     onChange={(e) => setNewRoleName(e.target.value)}

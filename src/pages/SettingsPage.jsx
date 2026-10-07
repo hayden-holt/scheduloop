@@ -306,6 +306,7 @@ function SettingsPage() {
                     }
                   >
                     <option value="cafe">Cafe / Restaurant</option>
+                    <option value="retail">Retail / Other Business</option>
                     <option value="gym">Gym / Fitness</option>
                   </select>
                 </label>

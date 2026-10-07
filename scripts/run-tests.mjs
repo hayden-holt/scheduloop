@@ -84,11 +84,18 @@ import {
   buildPeakStaffDefaults,
   deriveBusyLevelFromDemandEstimates,
   getDefaultRolesForBusinessProfile,
+  getBusinessSubtypeOptions,
+  getDemandUnitOptions,
   getOpeningHoursForDate,
   normalizeBusinessProfileBasics,
   normalizeDemandEstimates,
   normalizeOpeningHours,
 } from "../src/utils/businessProfileSetup.js";
+import { getBusinessPresetRoles } from "../src/config/businessPresets.js";
+import {
+  buildForecastChartData,
+  buildPresetShape,
+} from "../src/utils/forecastChartData.js";
 import {
   buildCompletedOnboardingState,
   getWorkspaceRouteState,
@@ -304,6 +311,86 @@ test("demand estimates keep skipped values optional", () => {
     normal: null,
     busy: null,
   });
+});
+
+test("retail profiles survive normalization and settings without becoming gyms", () => {
+  for (const { value: businessSubtype } of getBusinessSubtypeOptions("retail")) {
+    const basics = normalizeBusinessProfileBasics({ businessType: "retail", businessSubtype });
+    assert.equal(basics.businessType, "retail");
+    assert.equal(basics.businessSubtype, businessSubtype);
+    for (const { value: unit } of getDemandUnitOptions("retail")) {
+      assert.equal(normalizeDemandEstimates({ unit }, "retail").unit, unit);
+    }
+    const roles = getDefaultRolesForBusinessProfile(basics);
+    assert.deepEqual(roles.map((role) => role.id), ["teamMember", "manager"]);
+    assert.equal(roles.some((role) => /gym|check-in|PTs|instructor/i.test(role.name + role.description)), false);
+    assert.equal(roles.every((role) => role.curve.length === HOURS.length), true);
+    assert.deepEqual(buildPeakStaffDefaults(roles), { teamMember: 2, manager: 1 });
+  }
+  assert.equal(normalizeBusinessProfileBasics({ businessType: "retail" }).businessSubtype, "retailStore");
+  assert.equal(normalizeDemandEstimates({}, "retail").unit, "customers");
+  assert.equal(getBusinessPresetRoles("retail")[0].id, "teamMember");
+});
+
+test("existing cafe and gym subtypes and demand units retain their stored values", () => {
+  for (const businessType of ["cafe", "gym"]) {
+    for (const { value: businessSubtype } of getBusinessSubtypeOptions(businessType)) {
+      const basics = normalizeBusinessProfileBasics({ businessType, businessSubtype });
+      assert.equal(basics.businessType, businessType);
+      assert.equal(basics.businessSubtype, businessSubtype);
+    }
+    for (const { value: unit } of getDemandUnitOptions(businessType)) {
+      assert.equal(normalizeDemandEstimates({ unit }, businessType).unit, unit);
+    }
+  }
+});
+
+test("cafe, legacy gym and retail complete onboarding and reload the dashboard", () => {
+  for (const businessType of ["cafe", "gym", "retail"]) {
+    const basics = normalizeBusinessProfileBasics({ businessType });
+    const roles = getDefaultRolesForBusinessProfile(basics);
+    const pending = normalizeMembershipData({ status: "active", role: "owner", onboardingComplete: false });
+    assert.equal(getWorkspaceRouteState({ isAuthenticated: true, membership: pending }), "onboarding");
+    const result = buildCompletedOnboardingState({
+      config: { ...basics, roles, hours: normalizeOpeningHours(), demandEstimates: normalizeDemandEstimates({}, businessType), peakStaff: buildPeakStaffDefaults(roles) },
+      businessId: `new-${businessType}`,
+      user: { uid: "test-owner", email: "owner@example.com" },
+      membership: pending,
+    });
+    const persisted = JSON.parse(JSON.stringify(result));
+    assert.equal(hasUnsupportedNestedArray(persisted.profile), false);
+    assert.equal(persisted.safePatch.businessType, businessType);
+    assert.equal(persisted.profile.businessId, `new-${businessType}`);
+    assert.equal(persisted.profile.ownerUid, "test-owner");
+    assert.equal(persisted.profile.updatedBy, "test-owner");
+    assert.equal(persisted.membership.businessId, persisted.profile.businessId);
+    assert.equal(persisted.membership.onboardingComplete, true);
+    const reloadedMembership = normalizeMembershipData(persisted.membership);
+    assert.equal(shouldLoadBusinessProfileForMembership(reloadedMembership), true);
+    assert.equal(getWorkspaceRouteState({ isAuthenticated: true, membership: reloadedMembership, profile: persisted.profile }), "dashboard");
+  }
+});
+
+test("retail roles work with existing forecasting and rota coverage", () => {
+  const roles = getDefaultRolesForBusinessProfile({ businessType: "retail" });
+  const points = buildForecastChartData({
+    roles,
+    peakStaff: buildPeakStaffDefaults(roles),
+    openingHours: normalizeOpeningHours(),
+    selectedDate: "2026-10-07",
+    presetShape: buildPresetShape(roles),
+  });
+  assert.ok(points.length > 0);
+  assert.ok(points.every((point) => Number.isFinite(point.total) && point.total >= 0));
+  const coverage = calculateCoverageForDay({
+    forecastPoints: points,
+    roles,
+    intervalMinutes: 30,
+    shifts: [{ employeeId: "test-employee", date: "2026-10-07", startTime: "09:00", endTime: "17:00", roleId: "teamMember" }],
+  });
+  assert.equal(coverage.length, points.length);
+  assert.ok(coverage.some((row) => row.scheduledTotal === 1));
+  assert.ok(coverage.every((row) => row.roleCoverage.length === roles.length));
 });
 
 test("business rhythm applies a conservative curve adjustment", () => {

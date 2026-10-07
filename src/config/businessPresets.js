@@ -23,6 +23,30 @@ export const DEFAULT_OPERATING_RULES = {
 };
 
 export const BUSINESS_ROLE_PRESETS = {
+  retail: [
+    {
+      id: "teamMember",
+      name: "Team Member",
+      color: "#4f8cff",
+      curve: Array(HOURS.length).fill(1),
+      serviceRate: 20,
+      minStaff: 1,
+      demandWeight: 1,
+      preferredDemandSource: "customers",
+      requiredDuringOpen: true,
+    },
+    {
+      id: "manager",
+      name: "Manager / Supervisor",
+      color: "#facc15",
+      curve: Array(HOURS.length).fill(1),
+      serviceRate: 60,
+      minStaff: 0,
+      demandWeight: 0.25,
+      preferredDemandSource: "customers",
+      requiredDuringOpen: false,
+    },
+  ],
   gym: [
     {
       id: "frontDesk",
